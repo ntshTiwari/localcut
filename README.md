@@ -3,6 +3,13 @@
 Flutter UI and shared edit planning, with a Swift AVFoundation media adapter.
 No app backend, network requests, account, or transcription service.
 
+## Code walkthroughs
+
+Start with [docs/README.md](docs/README.md) for step-by-step explanations of
+cuts, muting, export, and silence detection. Each code-changing commit must
+include its corresponding documentation update; new milestones get a numbered
+guide under `docs/` beside `lib/`.
+
 ## Implemented
 
 - Import a local video using the iOS Files picker (copy into app storage).
@@ -113,7 +120,8 @@ Flutter analysis and Dart/widget tests pass. Swift is checked
 against the installed iOS SDK separately. Full app builds currently fail in
 asset compilation because Xcode cannot access an available simulator runtime
 in this execution session. The user has confirmed the expected edit workflow works in their test.
-The new silence-analysis path has not yet been verified on an iPhone.
+The user subsequently reported the sample-video workflow working. This is a
+manual report, not comprehensive native decoder/device verification.
 An attempted AVAssetReader fixture test in this execution session fails at
 reader startup with AVFoundation error -11800 on both WAV and MP4; PCM
 accumulation is separately tested without the media reader. Broader device,

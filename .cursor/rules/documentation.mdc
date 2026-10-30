@@ -1,0 +1,8 @@
+---
+description: Keep LocalCut implementation explanations with each code change
+alwaysApply: true
+---
+
+Follow the documentation and milestone-branch instructions in `AGENTS.md`.
+Before committing code, add or update the relevant `docs/<step>/README.md`
+and include it in that commit. Use `docs/README.md` as the documentation index.
