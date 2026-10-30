@@ -241,3 +241,12 @@ is fixed at 300 ms total for the quick action. There is no general undo history
 or persisted project state. Recognition/timing limitations from step 4 still
 apply. Duration chips wrap with text; they are not a proportional timeline or
 a substitute for waveform-level alignment.
+
+## Device validation follow-up
+
+The user reported that the redesigned editing flow works on their device.
+This is a manual acceptance report, not an automated encoder test. Xcode's
+normalized project formatting and the signing-team configuration used for that
+run are retained in a follow-up commit. Other developers should select their
+own development team in Runner's Signing & Capabilities before running on a
+physical iPhone. No editing or export logic changed in this follow-up.
