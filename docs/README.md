@@ -16,8 +16,13 @@ beside `lib/`; explanations are versioned with the code in Git.
    display, drag/resize selection, zoom/navigation, and cut/mute preview/addition.
    Added on `milestone/waveform-selection`, based on `de5c2a7`.
 
+4. [Downloadable transcript models](04-transcript-models/README.md) — English,
+   Hindi, and mixed-speech selection, verified downloads, offline recognition,
+   word timings, and explicit transcript muting.
+   Added on `milestone/transcript-language-models`, based on `b490f03`.
+
 The first two guides were added in a documentation follow-up after their
-implementation commits. Step 3's guide is included with its implementation.
+implementation commits. Later guides are included with their implementations.
 Existing commits have not been rewritten. Later changes should update
 the guide for the affected behavior in the same commit as the code.
 

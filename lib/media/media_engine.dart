@@ -3,9 +3,10 @@ import '../core/edit_plan.dart';
 import '../core/silence_detection.dart';
 
 class SourceVideo {
-  const SourceVideo(this.path, this.durationMs);
+  const SourceVideo(this.path, this.durationMs, {this.hasAudio});
   final String path;
   final int durationMs;
+  final bool? hasAudio;
 }
 
 abstract interface class MediaEngine {
@@ -30,6 +31,7 @@ class PlatformMediaEngine implements MediaEngine {
         : SourceVideo(
             data['path'] as String,
             (data['durationMs'] as num).toInt(),
+            hasAudio: data['hasAudio'] as bool?,
           );
   }
 

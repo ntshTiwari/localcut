@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, UIDocumentPickerDelegate {
+  private var transcriptionService: LocalTranscriptionService?
   private var pendingImport: FlutterResult?
   private var exportSession: AVAssetExportSession?
   private var analysisTask: Task<Void, Never>?
@@ -19,6 +20,7 @@ import UniformTypeIdentifiers
     guard let controller = window?.rootViewController as? FlutterViewController else {
       return super.application(application, didFinishLaunchingWithOptions: launchOptions)
     }
+    transcriptionService = LocalTranscriptionService(messenger: controller.binaryMessenger)
     mediaChannel = FlutterMethodChannel(name: "localcut/media", binaryMessenger: controller.binaryMessenger)
     mediaChannel?.setMethodCallHandler { [weak self] call, result in
       self?.handle(call, result: result)
@@ -130,7 +132,8 @@ import UniformTypeIdentifiers
           guard !tracks.isEmpty, duration.seconds.isFinite, duration.seconds > 0 else {
             throw self.error("Choose a playable video with a positive duration.")
           }
-          reply(["path": destination.path, "durationMs": Int(duration.seconds * 1000)])
+          let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+          reply(["path": destination.path, "durationMs": Int(duration.seconds * 1000), "hasAudio": !audioTracks.isEmpty])
         } catch {
           try? FileManager.default.removeItem(at: destination)
           throw error

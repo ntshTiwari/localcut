@@ -1,7 +1,8 @@
 # LocalCut — offline iPhone prototype
 
 Flutter UI and shared edit planning, with a Swift AVFoundation media adapter.
-No app backend, network requests, account, or transcription service.
+No app backend, account, or media uploads. Network access is used only for
+on-demand speech-model downloads; recognition runs locally afterward.
 
 ## Code walkthroughs
 
@@ -9,6 +10,23 @@ Start with [docs/README.md](docs/README.md) for step-by-step explanations of
 cuts, muting, export, and silence detection. Each code-changing commit must
 include its corresponding documentation update; new milestones get a numbered
 guide under `docs/` beside `lib/`.
+
+## Transcript editing
+
+Choose **English**, **Hindi**, or **Hindi–English** after importing a video.
+Download the required model on first transcription: English is about 148 MB;
+Hindi and Hindi–English share one 488 MB multilingual download. Selection alone
+does not download anything. Subsequent recognition works offline.
+
+Tap a transcript word to hear context. Long-press the first word and tap the last
+to select a phrase, preview its mute, and explicitly add it to proposed edits.
+Keep using **Waveform & pause tools** for timing adjustments and automatic pauses.
+Word timing and recognition are approximate; preview every edit.
+
+**A full iOS rebuild is required for this milestone.** Xcode resolves the pinned
+whisper.cpp native library through a local Swift package. Hot reload is not enough.
+See [step 4](docs/04-transcript-models/README.md) for setup, model storage, download
+verification, the code walkthrough, tests, and limitations.
 
 ## Implemented
 
@@ -29,8 +47,8 @@ guide under `docs/` beside `lib/`.
   them to proposed edits before the existing export approval step.
 - Cancel analysis. Missing audio and entirely quiet videos produce no cuts.
 
-Project reopening, numeric export progress, Photos import, and Android media
-processing are subsequent milestones.
+Project reopening, persistent transcripts, numeric export progress, Photos
+import, and Android media processing are subsequent milestones.
 
 ## Run on your iPhone
 
@@ -95,6 +113,11 @@ mapping, drawing logic, and an iPhone acceptance checklist.
 - `lib/media/media_engine.dart`: backend-neutral interface and one version-one
   platform channel adapter (`localcut/media`). Small, explicit message schema.
 - `lib/main.dart`: import → mark → review → approve → export UI.
+- `lib/transcript/`: language packs, timed transcript models, recognition bridge,
+  model-download controls, and transcript-to-mute review.
+- `ios/Runner/LocalTranscription.swift`: verified weight storage/downloads,
+  cancellable local recognition, and bounded PCM input chunks.
+- `ios/Packages/LocalWhisper/Package.swift`: checksum-pinned native speech engine.
 - `lib/core/silence_detection.dart`: shared pause detection over measured audio
   windows, independent of Apple APIs and ready for an Android decoder adapter.
 - `lib/core/waveform_timeline.dart`: source-time viewport, range constraints,
@@ -120,7 +143,8 @@ envelope to Dart. Stereo is not downmixed, avoiding phase cancellation. Raw
 PCM is released per buffer. Cancellation is checked between buffers. The
 measurements remain in memory for the current imported source; settings reuse
 them. Android will provide the same window contract through MediaCodec later.
-No FFmpeg or AI model is needed for the app.
+Silence detection needs no AI model. Transcript generation uses optional
+downloaded Whisper models. FFmpeg is not an app dependency.
 
 ## Checks
 
@@ -164,4 +188,6 @@ format, and long-recording validation is still pending.
 Each milestone starts on its own branch from the accepted base. The silence
 detection work lives on `milestone/silence-detection`. Waveform selection lives
 on `milestone/waveform-selection`, based on the pushed silence milestone.
-`main` retains the first working prototype until the user requests a merge.
+Transcript models live on `milestone/transcript-language-models`, based on
+waveform commit `b490f03`. `main` retains the first working prototype until the
+user requests a merge.

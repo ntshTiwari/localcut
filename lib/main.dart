@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'core/edit_plan.dart';
 import 'widgets/silence_review.dart';
 import 'media/media_engine.dart';
+import 'transcript/transcript_panel.dart';
+import 'transcript/transcription_engine.dart';
 
 void main() => runApp(const LocalCutApp());
 
@@ -35,7 +37,7 @@ class _EditorScreenState extends State<EditorScreen> {
   EditKind _kind = EditKind.cut;
   bool _busy = false;
   bool _exporting = false;
-  bool _silenceBusy = false;
+  bool _panelBusy = false;
   String? _exportPath;
   String? _message;
 
@@ -172,25 +174,49 @@ class _EditorScreenState extends State<EditorScreen> {
               child: const Text('Watch original'),
             ),
             const Divider(height: 36),
-            SilenceReview(
-              key: ValueKey(_source!.path),
-              engine: _engine,
+            TranscriptPanel(
+              key: ValueKey('transcript-${_source!.path}'),
+              engine: PlatformTranscriptionEngine(),
+              media: _engine,
               source: _source!,
-              enabled: !_busy,
               edits: _edits,
+              enabled: !_busy,
               onBusyChanged: (value) => setState(() {
                 _busy = value;
-                _silenceBusy = value;
+                _panelBusy = value;
               }),
-              onApply: (cuts) {
-                compilePlan(_source!.durationMs, [..._edits, ...cuts]);
-                setState(() {
-                  _edits.addAll(cuts);
-                  _exportPath = null;
-                  _message =
-                      'Added to proposed edits. Preview before exporting.';
-                });
-              },
+              onAdd: (edit) => setState(() {
+                _edits.add(edit);
+                _exportPath = null;
+                _message = 'Mute added. Preview before exporting.';
+              }),
+            ),
+            const Divider(height: 36),
+            ExpansionTile(
+              title: const Text('Waveform & pause tools'),
+              maintainState: true,
+              children: [
+                SilenceReview(
+                  key: ValueKey(_source!.path),
+                  engine: _engine,
+                  source: _source!,
+                  enabled: !_busy,
+                  edits: _edits,
+                  onBusyChanged: (value) => setState(() {
+                    _busy = value;
+                    _panelBusy = value;
+                  }),
+                  onApply: (cuts) {
+                    compilePlan(_source!.durationMs, [..._edits, ...cuts]);
+                    setState(() {
+                      _edits.addAll(cuts);
+                      _exportPath = null;
+                      _message =
+                          'Added to proposed edits. Preview before exporting.';
+                    });
+                  },
+                ),
+              ],
             ),
             const Divider(height: 36),
             Text('Mark an edit', style: Theme.of(context).textTheme.titleLarge),
@@ -284,7 +310,7 @@ class _EditorScreenState extends State<EditorScreen> {
               ),
             ],
           ],
-          if (_busy && !_silenceBusy) ...[
+          if (_busy && !_panelBusy) ...[
             const SizedBox(height: 20),
             const LinearProgressIndicator(),
             Text(

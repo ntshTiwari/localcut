@@ -210,3 +210,10 @@ Analysis remains required before the waveform appears. Selection, viewport,
 and edits remain in memory only. Long recordings and physical-device
 interaction still need validation. No word transcription or automatic filler
 removal has been added.
+
+## Subsequent milestone
+
+[Step 4](../04-transcript-models/README.md) puts transcript editing first and moves
+this interface into **Waveform & pause tools**. The waveform and pause analysis
+still use the same cached measurements. Speech recognition uses a separate
+model/decoder path and creates the same source-time mute instructions.
