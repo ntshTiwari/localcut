@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import '../core/edit_plan.dart';
+import '../core/silence_detection.dart';
 
 class SourceVideo {
   const SourceVideo(this.path, this.durationMs);
@@ -13,6 +14,8 @@ abstract interface class MediaEngine {
   Future<String> export(String path, List<RenderSegment> segments);
   Future<void> share(String path);
   Future<void> cancelExport();
+  Future<AudioAnalysis> analyzeAudio(String path);
+  Future<void> cancelAnalysis();
 }
 
 /// Only this adapter knows about platform messaging. Android implements the
@@ -43,6 +46,28 @@ class PlatformMediaEngine implements MediaEngine {
   @override
   Future<void> share(String path) =>
       _channel.invokeMethod('share', {'path': path});
+  @override
+  Future<AudioAnalysis> analyzeAudio(String path) async {
+    final data = await _channel.invokeMapMethod<String, dynamic>(
+      'analyzeAudio',
+      {'path': path},
+    );
+    if (data == null) throw StateError('Audio analysis returned no result.');
+    final windows = (data['windows'] as List)
+        .map((raw) {
+          final values = raw as List;
+          return AudioWindow(
+            (values[0] as num).toInt(),
+            (values[1] as num).toInt(),
+            (values[2] as num).toDouble(),
+          );
+        })
+        .toList(growable: false);
+    return AudioAnalysis(windows, hasAudio: data['hasAudio'] as bool);
+  }
+
+  @override
+  Future<void> cancelAnalysis() => _channel.invokeMethod('cancelAnalysis');
   @override
   Future<void> cancelExport() => _channel.invokeMethod('cancelExport');
 }

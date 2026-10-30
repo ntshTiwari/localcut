@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'core/edit_plan.dart';
+import 'widgets/silence_review.dart';
 import 'media/media_engine.dart';
 
 void main() => runApp(const LocalCutApp());
 
 class LocalCutApp extends StatelessWidget {
-  const LocalCutApp({super.key});
+  const LocalCutApp({super.key, this.engine});
+  final MediaEngine? engine;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'LocalCut',
@@ -13,18 +15,19 @@ class LocalCutApp extends StatelessWidget {
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff236353)),
       useMaterial3: true,
     ),
-    home: const EditorScreen(),
+    home: EditorScreen(engine: engine),
   );
 }
 
 class EditorScreen extends StatefulWidget {
-  const EditorScreen({super.key});
+  const EditorScreen({super.key, this.engine});
+  final MediaEngine? engine;
   @override
   State<EditorScreen> createState() => _EditorScreenState();
 }
 
 class _EditorScreenState extends State<EditorScreen> {
-  final MediaEngine _engine = PlatformMediaEngine();
+  late final MediaEngine _engine = widget.engine ?? PlatformMediaEngine();
   final _start = TextEditingController();
   final _end = TextEditingController();
   final List<EditRange> _edits = [];
@@ -32,6 +35,7 @@ class _EditorScreenState extends State<EditorScreen> {
   EditKind _kind = EditKind.cut;
   bool _busy = false;
   bool _exporting = false;
+  bool _silenceBusy = false;
   String? _exportPath;
   String? _message;
 
@@ -128,7 +132,7 @@ class _EditorScreenState extends State<EditorScreen> {
             style: Theme.of(context).textTheme.headlineMedium,
           ),
           const SizedBox(height: 8),
-          const Text('Offline prototype · Manual cuts and muting · iPhone'),
+          const Text('Offline editing · Silence cleanup and muting · iPhone'),
           const SizedBox(height: 24),
           FilledButton.icon(
             onPressed: _busy
@@ -168,9 +172,30 @@ class _EditorScreenState extends State<EditorScreen> {
               child: const Text('Watch original'),
             ),
             const Divider(height: 36),
+            SilenceReview(
+              key: ValueKey(_source!.path),
+              engine: _engine,
+              source: _source!,
+              enabled: !_busy,
+              edits: _edits,
+              onBusyChanged: (value) => setState(() {
+                _busy = value;
+                _silenceBusy = value;
+              }),
+              onApply: (cuts) {
+                compilePlan(_source!.durationMs, [..._edits, ...cuts]);
+                setState(() {
+                  _edits.addAll(cuts);
+                  _exportPath = null;
+                  _message =
+                      '${cuts.length} silence cuts added. Preview before exporting.';
+                });
+              },
+            ),
+            const Divider(height: 36),
             Text('Mark an edit', style: Theme.of(context).textTheme.titleLarge),
             const Text(
-              'Watch the video, then enter its original timestamps. Waveform selection and automatic silence suggestions come next.',
+              'Add a manual cut or mute using original video timestamps.',
             ),
             const SizedBox(height: 16),
             SegmentedButton<EditKind>(
@@ -259,7 +284,7 @@ class _EditorScreenState extends State<EditorScreen> {
               ),
             ],
           ],
-          if (_busy) ...[
+          if (_busy && !_silenceBusy) ...[
             const SizedBox(height: 20),
             const LinearProgressIndicator(),
             Text(

@@ -3,7 +3,7 @@
 Flutter UI and shared edit planning, with a Swift AVFoundation media adapter.
 No app backend, network requests, account, or transcription service.
 
-## First milestone implemented
+## Implemented
 
 - Import a local video using the iOS Files picker (copy into app storage).
 - Watch the original and enter source-time cut or mute ranges in seconds.
@@ -12,8 +12,14 @@ No app backend, network requests, account, or transcription service.
 - Cancel export and share/save the result through the iOS share sheet.
 - Preserve orientation and use one composition builder for preview/export.
 
-The prototype currently uses manual timestamps. Automatic silence detection,
-waveform selection, project reopening, numeric export progress, Photos import,
+- Analyze local audio for long quiet pauses without a backend or AI model.
+- Tune threshold (default -40 dBFS), minimum pause (800 ms), and retained edge
+  padding (150 ms on each side), reusing cached measurements for the session.
+- Hear original context, select suggestions, preview them, and explicitly add
+  them to proposed edits before the existing export approval step.
+- Cancel analysis. Missing audio and entirely quiet videos produce no cuts.
+
+Waveform selection, project reopening, numeric export progress, Photos import,
 and Android media processing are subsequent milestones.
 
 ## Run on your iPhone
@@ -43,6 +49,24 @@ Use a recording longer than 12 seconds with visible talking or hand claps.
 6. Check orientation, lip sync, cut boundaries, and mute timing.
 7. Repeat in airplane mode with a locally available file.
 
+## Silence-detection acceptance exercise
+
+1. Record yourself speaking, pause for about two seconds, then speak again.
+2. Import the recording, tap **Analyze audio**, and inspect the suggestions.
+3. Use the play icon beside a suggestion to hear its original context.
+4. Select a suggestion and tap **Preview selected silence cuts**. Your manual
+   cuts and mutes are included in that preview too.
+5. Tap **Add selected cuts to edits**, then preview and approve export.
+6. Confirm speech starts/ends naturally and the exported result matches preview.
+7. Adjust settings: candidates recalculate without decoding again and the
+   pending selection clears. Already-added edits remain in the proposed list;
+   remove them there if you want a different version of the same pause.
+8. Test no-audio, noisy-room, quiet-speaker, and all-silent recordings too.
+
+This is volume-based quiet detection, not speech recognition. Background music
+can prevent pause detection and soft speech can look quiet. Every cut requires
+selection and review. Unknown gaps in decoded audio are not treated as silence.
+
 ## Architecture
 
 - `lib/core/edit_plan.dart`: platform-independent source-time ranges and plan
@@ -50,6 +74,10 @@ Use a recording longer than 12 seconds with visible talking or hand claps.
 - `lib/media/media_engine.dart`: backend-neutral interface and one version-one
   platform channel adapter (`localcut/media`). Small, explicit message schema.
 - `lib/main.dart`: import → mark → review → approve → export UI.
+- `lib/core/silence_detection.dart`: shared pause detection over measured audio
+  windows, independent of Apple APIs and ready for an Android decoder adapter.
+- `lib/widgets/silence_review.dart`: analysis settings, selection, context
+  playback, candidate preview, and explicit addition to the edit list.
 - `ios/Runner/AppDelegate.swift`: iOS import, source inspection, composition,
   native player, export, and share adapter. Kept in a registered Runner source
   file for the initial proof; extract into a plugin as the engine grows.
@@ -59,22 +87,37 @@ Use a recording longer than 12 seconds with visible talking or hand claps.
 The bridge transmits only file references and edit metadata, never video frames.
 All range timestamps are integer milliseconds on the original video timeline.
 Native composition converts them to CMTime and assembles retained segments.
-No FFmpeg or AI model is needed for this milestone.
+The audio bridge adds `analyzeAudio({path})`, returning
+`{hasAudio, windows: [[startMs, endMs, dbFS], ...]}`, and `cancelAnalysis()`.
+iOS decodes 32-bit float PCM using AVAssetReader on a detached task, computes
+20 ms RMS windows using the loudest channel, and sends only that compact
+envelope to Dart. Stereo is not downmixed, avoiding phase cancellation. Raw
+PCM is released per buffer. Cancellation is checked between buffers. The
+measurements remain in memory for the current imported source; settings reuse
+them. Android will provide the same window contract through MediaCodec later.
+No FFmpeg or AI model is needed for the app.
 
 ## Checks
 
-Run `flutter analyze` and `flutter test`.
-Tests cover overlapping cuts/mutes, range validation, merged segments, retained
-length, and the initial screen. Native playback and encoding must additionally
+Run `flutter analyze` and `flutter test`. On macOS, also run
+`python3 tool/check_audio_envelope.py` for native PCM checks.
+Tests cover overlapping cuts/mutes, range validation, pause padding, threshold
+changes, missing/quiet audio, unknown timeline gaps, and explicit suggestion
+selection/preview/addition. Native PCM checks cover opposite-phase stereo,
+uneven buffer boundaries, partial windows, gaps, and invalid sample rejection. Native playback and encoding must additionally
 be checked on an iPhone; Dart tests do not validate media output.
 
 ## Validation in this workspace
 
-Flutter analysis passes and all four Dart/widget tests pass. Swift is checked
+Flutter analysis and Dart/widget tests pass. Swift is checked
 against the installed iOS SDK separately. Full app builds currently fail in
 asset compilation because Xcode cannot access an available simulator runtime
 in this execution session. The user has confirmed the expected edit workflow works in their test.
-Broader device, format, and long-recording validation is still pending.
+The new silence-analysis path has not yet been verified on an iPhone.
+An attempted AVAssetReader fixture test in this execution session fails at
+reader startup with AVFoundation error -11800 on both WAV and MP4; PCM
+accumulation is separately tested without the media reader. Broader device,
+format, and long-recording validation is still pending.
 
 ## Current limitations
 
@@ -89,3 +132,9 @@ Broader device, format, and long-recording validation is still pending.
   the source and native preset. It does not guarantee lossless export.
 - Mute edges currently use hard volume changes. Short audio fades can be added
   after the initial export path is verified.
+
+## Milestone branches
+
+Each milestone starts on its own branch from the accepted base. The silence
+detection work lives on `milestone/silence-detection`; `main` retains the first
+working prototype until the milestone is reviewed and merged.
