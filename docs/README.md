@@ -12,9 +12,13 @@ beside `lib/`; explanations are versioned with the code in Git.
 2. [Automatic silence suggestions](02-silence-detection/README.md) — local audio
    decoding, RMS measurements, pause detection, settings, and review controls.
    Introduced in commit `f880c34` on `milestone/silence-detection`.
+3. [Waveform selection](03-waveform-selection/README.md) — source-time audio
+   display, drag/resize selection, zoom/navigation, and cut/mute preview/addition.
+   Added on `milestone/waveform-selection`, based on `de5c2a7`.
 
-The guides were added in a documentation follow-up after those implementation
-commits. Existing commits have not been rewritten. Later changes should update
+The first two guides were added in a documentation follow-up after their
+implementation commits. Step 3's guide is included with its implementation.
+Existing commits have not been rewritten. Later changes should update
 the guide for the affected behavior in the same commit as the code.
 
 ## Documentation convention

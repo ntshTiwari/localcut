@@ -207,3 +207,10 @@ approximate boundaries, not word-level alignment. Padding reduces clipped
 speech risk but does not guarantee natural cuts. Analysis progress is
 indeterminate, cached windows grow with recording duration, and analysis runs
 in the foreground without persistent caching or job recovery.
+
+## Subsequent milestone
+
+[Step 3](../03-waveform-selection/README.md) inserts the waveform above the pause
+settings and shares this widget's cached analysis. The analysis, detector, and
+native channel contract are unchanged. Changing silence settings clears pending
+suggestion checkboxes but leaves the waveform's manual range alone.

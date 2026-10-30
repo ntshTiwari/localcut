@@ -20,14 +20,17 @@ guide under `docs/` beside `lib/`.
 - Preserve orientation and use one composition builder for preview/export.
 
 - Analyze local audio for long quiet pauses without a backend or AI model.
+- Display the source waveform with marked suggestions, cuts, and mutes.
+- Drag/resize a range, zoom and navigate, and adjust its edges in 20 ms steps.
+- Hear original context and preview a waveform cut/mute before adding it.
 - Tune threshold (default -40 dBFS), minimum pause (800 ms), and retained edge
   padding (150 ms on each side), reusing cached measurements for the session.
 - Hear original context, select suggestions, preview them, and explicitly add
   them to proposed edits before the existing export approval step.
 - Cancel analysis. Missing audio and entirely quiet videos produce no cuts.
 
-Waveform selection, project reopening, numeric export progress, Photos import,
-and Android media processing are subsequent milestones.
+Project reopening, numeric export progress, Photos import, and Android media
+processing are subsequent milestones.
 
 ## Run on your iPhone
 
@@ -74,6 +77,17 @@ This is volume-based quiet detection, not speech recognition. Background music
 can prevent pause detection and soft speech can look quiet. Every cut requires
 selection and review. Unknown gaps in decoded audio are not treated as silence.
 
+## Waveform selection
+
+After **Analyze audio**, drag across the waveform to select original source
+media. Drag its edges or use the start/end buttons to adjust it. Zoom and use
+the navigation slider for smaller sections. Choose Cut or Mute, preview, then
+Add. Tapping the graph opens original context playback. Analysis is shared
+with the pause finder; waveform controls do not decode again.
+
+See [the step-3 walkthrough](docs/03-waveform-selection/README.md) for the
+mapping, drawing logic, and an iPhone acceptance checklist.
+
 ## Architecture
 
 - `lib/core/edit_plan.dart`: platform-independent source-time ranges and plan
@@ -83,6 +97,10 @@ selection and review. Unknown gaps in decoded audio are not treated as silence.
 - `lib/main.dart`: import → mark → review → approve → export UI.
 - `lib/core/silence_detection.dart`: shared pause detection over measured audio
   windows, independent of Apple APIs and ready for an Android decoder adapter.
+- `lib/core/waveform_timeline.dart`: source-time viewport, range constraints,
+  and display-resolution loudness aggregation.
+- `lib/widgets/waveform_editor.dart`: source waveform, zoom/navigation, gesture
+  selection, preview, and explicit cut/mute addition.
 - `lib/widgets/silence_review.dart`: analysis settings, selection, context
   playback, candidate preview, and explicit addition to the edit list.
 - `ios/Runner/AppDelegate.swift`: iOS import, source inspection, composition,
@@ -144,5 +162,6 @@ format, and long-recording validation is still pending.
 ## Milestone branches
 
 Each milestone starts on its own branch from the accepted base. The silence
-detection work lives on `milestone/silence-detection`; `main` retains the first
-working prototype until the milestone is reviewed and merged.
+detection work lives on `milestone/silence-detection`. Waveform selection lives
+on `milestone/waveform-selection`, based on the pushed silence milestone.
+`main` retains the first working prototype until the user requests a merge.

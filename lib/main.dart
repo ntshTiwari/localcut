@@ -132,7 +132,7 @@ class _EditorScreenState extends State<EditorScreen> {
             style: Theme.of(context).textTheme.headlineMedium,
           ),
           const SizedBox(height: 8),
-          const Text('Offline editing · Silence cleanup and muting · iPhone'),
+          const Text('Offline editing · Waveform, cuts and muting · iPhone'),
           const SizedBox(height: 24),
           FilledButton.icon(
             onPressed: _busy
@@ -188,7 +188,7 @@ class _EditorScreenState extends State<EditorScreen> {
                   _edits.addAll(cuts);
                   _exportPath = null;
                   _message =
-                      '${cuts.length} silence cuts added. Preview before exporting.';
+                      'Added to proposed edits. Preview before exporting.';
                 });
               },
             ),

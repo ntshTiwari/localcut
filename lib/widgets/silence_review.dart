@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/edit_plan.dart';
 import '../core/silence_detection.dart';
 import '../media/media_engine.dart';
+import 'waveform_editor.dart';
 
 class SilenceReview extends StatefulWidget {
   const SilenceReview({
@@ -137,10 +138,10 @@ class _SilenceReviewState extends State<SilenceReview> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Find long pauses', style: Theme.of(context).textTheme.titleLarge),
+        Text('Audio analysis', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 6),
         const Text(
-          'Find quiet sections on this device. Listen and select the cuts you want; nothing is added automatically.',
+          'Analyze once to display the waveform and find quiet sections. All processing stays on this device.',
         ),
         const SizedBox(height: 12),
         FilledButton.tonalIcon(
@@ -172,6 +173,38 @@ class _SilenceReviewState extends State<SilenceReview> {
         ],
         if (_analysis != null) ...[
           const SizedBox(height: 12),
+          if (_analysis!.hasAudio && _analysis!.windows.isNotEmpty)
+            WaveformEditor(
+              key: ValueKey('waveform-${widget.source.path}'),
+              analysis: _analysis!,
+              durationMs: widget.source.durationMs,
+              edits: widget.edits,
+              suggestions: suggestions,
+              enabled: _enabled,
+              onHear: (start, end) => _perform(
+                () => widget.engine.preview(widget.source.path, [
+                  RenderSegment(start, end, false),
+                ]),
+              ),
+              onPreview: (edit) => _perform(
+                () => widget.engine.preview(
+                  widget.source.path,
+                  compilePlan(widget.source.durationMs, [
+                    ...widget.edits,
+                    edit,
+                  ]),
+                ),
+              ),
+              onAdd: (edit) {
+                widget.onApply([edit]);
+                setState(() => _message = null);
+              },
+            ),
+          Text(
+            'Find long pauses',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
           Text('Quietness threshold: ${_threshold.round()} dBFS'),
           Slider(
             key: const Key('threshold'),

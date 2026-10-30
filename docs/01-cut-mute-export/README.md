@@ -152,9 +152,15 @@ manual report, not a comprehensive codec/device compatibility test.
 
 ## Current limitations
 
-One source and its first audio track are used. Project reopening, waveform
-selection, storage cleanup, numeric export progress, and Android media support
-are not implemented. Edits live in memory and disappear on restart. Copies and
+One source and its first audio track are used. Project reopening, storage
+cleanup, numeric export progress, and Android media support are not implemented.
+Edits live in memory and disappear on restart. Copies and
 exports stay in app storage. Mute edges use hard volume changes, which may need
 short fades to avoid clicks. HDR, unusual codecs, and long videos need broader
 device testing.
+
+## Subsequent milestone
+
+[Step 3](../03-waveform-selection/README.md) adds waveform-based selection on
+top of this same edit-plan and native export path. Manual timestamp entry stays
+available as an alternative.

@@ -113,4 +113,60 @@ void main() {
     );
     expect(find.text('Add selected cuts to edits'), findsNothing);
   });
+  testWidgets(
+    'waveform reuses silence analysis and previews a mute with existing cuts',
+    (tester) async {
+      final engine = FakeEngine();
+      final edits = <EditRange>[const EditRange(0, 500, EditKind.cut)];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: SilenceReview(
+                engine: engine,
+                source: const SourceVideo('source.mp4', 5000),
+                enabled: true,
+                edits: edits,
+                onApply: edits.addAll,
+                onBusyChanged: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Analyze audio'));
+      await tester.pumpAndSettle();
+      final graph = find.byKey(const Key('waveform-surface'));
+      await tester.ensureVisible(graph);
+      final rect = tester.getRect(graph);
+      final gesture = await tester.startGesture(
+        Offset(rect.left + rect.width * .2, rect.center.dy),
+      );
+      await gesture.moveBy(const Offset(24, 0));
+      await tester.pump();
+      await gesture.moveTo(Offset(rect.left + rect.width * .4, rect.center.dy));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Mute selection'));
+      await tester.tap(find.text('Mute selection'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Preview mute'));
+      await tester.tap(find.text('Preview mute'));
+      await tester.pumpAndSettle();
+      expect(
+        engine.previewed!.map((s) => [s.startMs, s.endMs, s.muted]).toList(),
+        [
+          [500, 1000, false],
+          [1000, 2000, true],
+          [2000, 5000, false],
+        ],
+      );
+      expect(edits.length, 1);
+      await tester.ensureVisible(find.text('Add mute'));
+      await tester.tap(find.text('Add mute'));
+      await tester.pumpAndSettle();
+      expect(edits.last.kind, EditKind.mute);
+      expect(engine.analyses, 1);
+    },
+  );
 }
