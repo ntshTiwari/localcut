@@ -101,7 +101,12 @@ EditRange transcriptMute(
   if (start < 0 || end > durationMs || end <= start) {
     throw StateError('Selection falls outside the video.');
   }
-  return EditRange(start, end, EditKind.mute);
+  return EditRange(
+    start,
+    end,
+    EditKind.mute,
+    label: 'Censor “${selected.map((word) => word.text).join(' ')}”',
+  );
 }
 
 class SpeechProgress {

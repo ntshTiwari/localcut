@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:localcut/core/edit_plan.dart';
+import 'package:localcut/core/silence_detection.dart';
 import 'package:localcut/media/media_engine.dart';
 import 'package:localcut/transcript/transcript.dart';
 import 'package:localcut/transcript/transcript_panel.dart';
@@ -14,6 +15,7 @@ class FakeSpeech implements TranscriptionEngine {
   final transcriptions = <TranscriptLanguage>[];
   Completer<void>? pendingDownload;
   bool failDownload = false;
+  VideoTranscript? result;
   String id(TranscriptLanguage language) =>
       language == TranscriptLanguage.english ? 'english' : 'multilingual';
   @override
@@ -39,10 +41,11 @@ class FakeSpeech implements TranscriptionEngine {
     TranscriptLanguage language,
   ) async {
     transcriptions.add(language);
-    return VideoTranscript(language, const [
-      TranscriptWord('Hello', 1000, 1300),
-      TranscriptWord('friend', 1400, 1800),
-    ]);
+    return result ??
+        VideoTranscript(language, const [
+          TranscriptWord('Hello', 1000, 1300),
+          TranscriptWord('friend', 1400, 1800),
+        ]);
   }
 
   @override
@@ -56,6 +59,18 @@ class FakeSpeech implements TranscriptionEngine {
   @override
   Future<void> deleteModel(TranscriptLanguage language) async {
     downloaded.remove(id(language));
+  }
+}
+
+class WaitingAnalysis extends FakeEngine {
+  final pending = Completer<AudioAnalysis>();
+  bool canceled = false;
+  @override
+  Future<AudioAnalysis> analyzeAudio(String path) => pending.future;
+  @override
+  Future<void> cancelAnalysis() async {
+    canceled = true;
+    pending.completeError(StateError('Canceled'));
   }
 }
 
@@ -87,6 +102,11 @@ Future<void> mount(
 }
 
 Future<void> language(WidgetTester tester, String label) async {
+  if (find.byKey(const Key('transcript-language')).evaluate().isEmpty) {
+    await tester.ensureVisible(find.text('Language & downloads'));
+    await tester.tap(find.text('Language & downloads'));
+    await tester.pumpAndSettle();
+  }
   await tester.ensureVisible(find.byKey(const Key('transcript-language')));
   await tester.tap(find.byKey(const Key('transcript-language')));
   await tester.pumpAndSettle();
@@ -111,17 +131,22 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('transcript-word-0')));
       await tester.pumpAndSettle();
+      expect(media.previewed, isNull);
+      await tester.ensureVisible(find.text('Hear'));
+      await tester.tap(find.text('Hear'));
+      await tester.pumpAndSettle();
       expect(media.previewed!.single.startMs, 500);
-      await tester.longPress(find.byKey(const ValueKey('transcript-word-0')));
+      await tester.ensureVisible(find.text('Select phrase'));
+      await tester.tap(find.text('Select phrase'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('transcript-word-1')),
+      );
       await tester.tap(find.byKey(const ValueKey('transcript-word-1')));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Preview selected mute'));
-      await tester.tap(find.text('Preview selected mute'));
-      await tester.pumpAndSettle();
       expect(edits, isEmpty);
-      expect(media.previewed!.where((e) => e.muted).single.startMs, 1000);
-      await tester.ensureVisible(find.text('Add selected mute'));
-      await tester.tap(find.text('Add selected mute'));
+      await tester.ensureVisible(find.text('Censor'));
+      await tester.tap(find.text('Censor'));
       await tester.pumpAndSettle();
       expect([edits.single.startMs, edits.single.endMs], [1000, 1800]);
     },
@@ -208,6 +233,9 @@ void main() {
     await language(tester, 'Hindi');
     await tester.tap(find.text('Generate transcript'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Language & downloads'));
+    await tester.tap(find.text('Language & downloads'));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Remove model download'));
     await tester.tap(find.text('Remove model download'));
     await tester.pumpAndSettle();
@@ -221,4 +249,21 @@ void main() {
     expect(find.byKey(const Key('transcript-text')), findsOneWidget);
     expect(find.text('Download 488 MB & transcribe'), findsOneWidget);
   });
+  testWidgets(
+    'cancel during pause checking cancels audio analysis without publishing a partial transcript',
+    (tester) async {
+      final speech = FakeSpeech()..downloaded.add('english');
+      final media = WaitingAnalysis();
+      await mount(tester, speech, media: media);
+      await tester.tap(find.text('Generate transcript'));
+      await tester.pump();
+      expect(find.text('Checking pauses on this device…'), findsOneWidget);
+      await tester.ensureVisible(find.text('Cancel transcription'));
+      await tester.tap(find.text('Cancel transcription'));
+      await tester.pumpAndSettle();
+      expect(media.canceled, isTrue);
+      expect(find.byKey(const Key('transcript-text')), findsNothing);
+      expect(find.textContaining('Canceled.'), findsOneWidget);
+    },
+  );
 }

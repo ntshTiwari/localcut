@@ -272,3 +272,11 @@ quality selection, and Android's native adapter are not implemented.
 - [Engine release](https://github.com/ggml-org/whisper.cpp/releases/tag/v1.7.6)
 - [Pinned model repository](https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1)
 - [Bundled notices](../../ios/Runner/ThirdPartyNotices.txt)
+
+## Subsequent milestone
+
+[Step 5](../05-transcript-pause-editor/README.md) replaces the long-press and
+individual preview/add controls with tap selection, explicit Censor, verified
+pause chips, and a fixed Review flow. Download/recognition logic remains the
+same, with a shared local audio-analysis pass to verify pauses. Language and
+model controls collapse once a transcript exists.

@@ -18,12 +18,19 @@ Download the required model on first transcription: English is about 148 MB;
 Hindi and Hindi–English share one 488 MB multilingual download. Selection alone
 does not download anything. Subsequent recognition works offline.
 
-Tap a transcript word to hear context. Long-press the first word and tap the last
-to select a phrase, preview its mute, and explicitly add it to proposed edits.
-Keep using **Waveform & pause tools** for timing adjustments and automatic pauses.
-Word timing and recognition are approximate; preview every edit.
+Tap a word, then **Censor**, or **Select phrase** and tap its last word.
+Tap a confirmed **Pause 1.8s** marker and **Shorten pause** to keep 0.3s of
+breathing room. Unverified **Gap** markers offer listening, not automatic cuts.
+Edited words and pauses show the proposed change; tap them to Restore.
 
-**A full iOS rebuild is required for this milestone.** Xcode resolves the pinned
+The bottom action bar stays visible while reading. **Review N changes** opens
+one screen for undo, playback, and explicit export. Language/model controls
+collapse under **Language & downloads** after generation, and waveform/manual
+controls live under **Fine-tune timing**. Pause analysis is reused across both.
+
+See [step 5](docs/05-transcript-pause-editor/README.md) for the current UI and logic.
+
+**Installing the native transcription milestone for the first time requires a full iOS rebuild.** Xcode resolves the pinned
 whisper.cpp native library through a local Swift package. Hot reload is not enough.
 See [step 4](docs/04-transcript-models/README.md) for setup, model storage, download
 verification, the code walkthrough, tests, and limitations.
@@ -114,7 +121,8 @@ mapping, drawing logic, and an iPhone acceptance checklist.
   platform channel adapter (`localcut/media`). Small, explicit message schema.
 - `lib/main.dart`: import → mark → review → approve → export UI.
 - `lib/transcript/`: language packs, timed transcript models, recognition bridge,
-  model-download controls, and transcript-to-mute review.
+  readable words/confirmed pause markers, shared selection actions, scoped restore,
+  and model-download controls.
 - `ios/Runner/LocalTranscription.swift`: verified weight storage/downloads,
   cancellable local recognition, and bounded PCM input chunks.
 - `ios/Packages/LocalWhisper/Package.swift`: checksum-pinned native speech engine.
@@ -189,5 +197,6 @@ Each milestone starts on its own branch from the accepted base. The silence
 detection work lives on `milestone/silence-detection`. Waveform selection lives
 on `milestone/waveform-selection`, based on the pushed silence milestone.
 Transcript models live on `milestone/transcript-language-models`, based on
-waveform commit `b490f03`. `main` retains the first working prototype until the
-user requests a merge.
+waveform commit `b490f03`. The unified transcript/pause editor lives on
+`milestone/transcript-pause-editor`, based on `6c21745`. `main` retains the first
+working prototype until the user requests a merge.

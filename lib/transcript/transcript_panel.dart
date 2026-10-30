@@ -3,6 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/edit_plan.dart';
+import '../core/silence_detection.dart';
+import 'transcript_gaps.dart';
+import 'transcript_actions.dart';
+import 'transcript_document.dart';
 import '../media/media_engine.dart';
 import 'transcript.dart';
 import 'transcription_engine.dart';
@@ -17,6 +21,10 @@ class TranscriptPanel extends StatefulWidget {
     required this.enabled,
     required this.onBusyChanged,
     required this.onAdd,
+    this.onSelectionChanged,
+    this.onRestoreRange,
+    this.analysis,
+    this.onAnalysis,
   });
   final TranscriptionEngine engine;
   final MediaEngine media;
@@ -25,6 +33,10 @@ class TranscriptPanel extends StatefulWidget {
   final bool enabled;
   final ValueChanged<bool> onBusyChanged;
   final ValueChanged<EditRange> onAdd;
+  final ValueChanged<TranscriptActions?>? onSelectionChanged;
+  final void Function(int startMs, int endMs, EditKind? kind)? onRestoreRange;
+  final AudioAnalysis? analysis;
+  final ValueChanged<AudioAnalysis>? onAnalysis;
   @override
   State<TranscriptPanel> createState() => _TranscriptPanelState();
 }
@@ -43,6 +55,32 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
   bool _polling = false;
   int? _anchor;
   int? _end;
+  int? _selectedGap;
+  bool _choosingPhrase = false;
+  bool _findingPauses = false;
+  AudioAnalysis? _analysis;
+  String? _pauseNotice;
+  VideoTranscript? _gapsForTranscript;
+  AudioAnalysis? _gapsForAnalysis;
+  List<TranscriptGap> _cachedGaps = [];
+  String _lastSelectionSignature = 'none';
+  AudioAnalysis? get _availableAnalysis => widget.analysis ?? _analysis;
+  List<TranscriptGap> get _gaps {
+    final transcript = _transcript;
+    if (transcript == null) return [];
+    if (!identical(transcript, _gapsForTranscript) ||
+        !identical(_availableAnalysis, _gapsForAnalysis)) {
+      _cachedGaps = transcriptGaps(
+        transcript,
+        widget.source.durationMs,
+        _availableAnalysis,
+      );
+      _gapsForTranscript = transcript;
+      _gapsForAnalysis = _availableAnalysis;
+    }
+    return _cachedGaps;
+  }
+
   VideoTranscript? get _transcript => _transcripts[_language];
   bool get _enabled => widget.enabled && !_working;
 
@@ -50,6 +88,16 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
   void initState() {
     super.initState();
     _refreshModel();
+  }
+
+  @override
+  void didUpdateWidget(covariant TranscriptPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_anchor != null || _selectedGap != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _publishSelection();
+      });
+    }
   }
 
   @override
@@ -81,7 +129,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
   }
 
   Future<void> _poll() async {
-    if (_polling) return;
+    if (_polling || _findingPauses) return;
     _polling = true;
     try {
       final progress = await widget.engine.progress();
@@ -113,6 +161,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
     }
     try {
       await action();
+      if (_cancelled) throw StateError('Canceled');
     } catch (e) {
       if (mounted) {
         setState(
@@ -139,6 +188,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
   }
 
   Future<void> _generate() => _perform(() async {
+    _clearSelection();
     if (widget.source.hasAudio == false) {
       throw StateError(
         'This video has no audio track. No model download is needed.',
@@ -163,44 +213,229 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
       widget.source.durationMs,
       _language,
     );
+    AudioAnalysis? analysis = _availableAnalysis;
+    if (analysis == null && !_cancelled) {
+      _findingPauses = true;
+      if (mounted) {
+        setState(
+          () => _progress = const SpeechProgress('checkingPauses', null, 0),
+        );
+      }
+      try {
+        analysis = await widget.media.analyzeAudio(widget.source.path);
+      } catch (_) {
+        if (mounted && !_cancelled) {
+          setState(
+            () => _pauseNotice =
+                'Transcript ready. Pause checking is unavailable; you can still censor words.',
+          );
+        }
+      } finally {
+        _findingPauses = false;
+      }
+    }
     if (mounted && !_cancelled) {
       setState(() {
+        _analysis = analysis;
+        if (analysis != null) _pauseNotice = null;
         _transcripts[_language] = transcript;
         _anchor = null;
         _end = null;
       });
+      if (analysis != null) widget.onAnalysis?.call(analysis);
     }
   }, cancellable: true);
 
   EditRange get _mute =>
       transcriptMute(_transcript!, _anchor!, _end!, widget.source.durationMs);
 
-  Future<void> _hear(int index) async {
-    final word = _transcript!.words[index];
-    if (!word.aligned) {
-      setState(
-        () => _error =
-            'Timing unavailable for this word. Use the waveform to find it.',
-      );
-      return;
+  void _clearSelection() {
+    setState(() {
+      _anchor = null;
+      _end = null;
+      _selectedGap = null;
+      _choosingPhrase = false;
+    });
+    _publishSelection();
+  }
+
+  void _selectWord(int index) {
+    setState(() {
+      _selectedGap = null;
+      _error = null;
+      if (_choosingPhrase && _anchor != null) {
+        _end = index;
+        _choosingPhrase = false;
+      } else {
+        _anchor = index;
+        _end = index;
+      }
+    });
+    _publishSelection();
+  }
+
+  void _selectGap(TranscriptGap gap) {
+    setState(() {
+      _selectedGap = gap.beforeWord;
+      _anchor = null;
+      _end = null;
+      _choosingPhrase = false;
+      _error = null;
+    });
+    _publishSelection();
+  }
+
+  Future<void> _hearRange(int start, int end) => _perform(
+    () => widget.media.preview(widget.source.path, [
+      RenderSegment(
+        math.max(0, start - 500),
+        math.min(widget.source.durationMs, end + 700),
+        false,
+      ),
+    ]),
+  );
+
+  void _apply(EditRange edit) {
+    try {
+      compilePlan(widget.source.durationMs, [...widget.edits, edit]);
+      widget.onAdd(edit);
+      _clearSelection();
+    } catch (e) {
+      setState(() => _error = e.toString());
     }
-    await _perform(
-      () => widget.media.preview(widget.source.path, [
-        RenderSegment(
-          math.max(0, word.startMs! - 500),
-          math.min(widget.source.durationMs, word.endMs! + 700),
-          false,
-        ),
-      ]),
+  }
+
+  Future<void> _checkPauses() => _perform(() async {
+    _findingPauses = true;
+    setState(() => _progress = const SpeechProgress('checkingPauses', null, 0));
+    try {
+      final analysis = await widget.media.analyzeAudio(widget.source.path);
+      if (mounted && !_cancelled) {
+        setState(() {
+          _analysis = analysis;
+          _pauseNotice = null;
+        });
+        widget.onAnalysis?.call(analysis);
+        _publishSelection();
+      }
+    } finally {
+      _findingPauses = false;
+    }
+  }, cancellable: true);
+
+  TranscriptActions? get _actions {
+    if (_selectedGap != null) {
+      final found = _gaps.where((gap) => gap.beforeWord == _selectedGap);
+      if (found.isEmpty) return null;
+      final gap = found.first;
+      final removed = coveredMilliseconds(
+        widget.edits,
+        gap.scopeStart,
+        gap.scopeEnd,
+        EditKind.cut,
+      );
+      final shortened = removed > 0;
+      return TranscriptActions(
+        title:
+            '${gap.confirmed ? 'Pause' : 'Gap'} · ${seconds(gap.durationMs)}',
+        detail: shortened
+            ? '${seconds(gap.durationMs - removed)} remains. Restore puts the trimmed time back.'
+            : gap.confirmed
+            ? 'Remove ${seconds(gap.durationMs - 300)} · keep 0.3s of breathing room.'
+            : 'Silence is not confirmed. Listen, or use Fine-tune timing.',
+        onClear: _clearSelection,
+        onHear: () => _hearRange(gap.startMs, gap.endMs),
+        onShorten: gap.confirmed && !shortened
+            ? () => _apply(gap.shorten())
+            : null,
+        onRestore: shortened && widget.onRestoreRange != null
+            ? () {
+                widget.onRestoreRange!(
+                  gap.scopeStart,
+                  gap.scopeEnd,
+                  EditKind.cut,
+                );
+                _clearSelection();
+              }
+            : null,
+      );
+    }
+    if (_anchor == null || _transcript == null) return null;
+    final first = math.min(_anchor!, _end!), last = math.max(_anchor!, _end!);
+    final text = _transcript!.words
+        .sublist(first, last + 1)
+        .map((word) => word.text)
+        .join(' ');
+    EditRange? mute;
+    try {
+      mute = _mute;
+    } catch (_) {
+      /* Text remains selectable; timing is unavailable. */
+    }
+    final range = mute;
+    final hasEdits =
+        range != null &&
+        widget.edits.any(
+          (edit) => edit.startMs < range.endMs && edit.endMs > range.startMs,
+        );
+    final censored =
+        range != null &&
+        coveredMilliseconds(
+              widget.edits,
+              range.startMs,
+              range.endMs,
+              EditKind.mute,
+            ) ==
+            range.endMs - range.startMs;
+    final trimmed =
+        range != null &&
+        coveredMilliseconds(
+              widget.edits,
+              range.startMs,
+              range.endMs,
+              EditKind.cut,
+            ) ==
+            range.endMs - range.startMs;
+    return TranscriptActions(
+      title: _choosingPhrase ? 'Now tap the last word' : text,
+      detail: range == null
+          ? 'Timing unavailable. Use Fine-tune timing to locate this text.'
+          : _choosingPhrase
+          ? 'Select the end of the phrase in the transcript.'
+          : censored
+          ? 'Already censored. Restore brings the sound back.'
+          : trimmed
+          ? 'This selection is trimmed. Restore puts it back.'
+          : '${first == last ? 'Word' : 'Phrase'} · ${seconds(range.endMs - range.startMs)} · censoring keeps video length unchanged.',
+      onClear: _clearSelection,
+      onHear: range == null
+          ? null
+          : () => _hearRange(range.startMs, range.endMs),
+      onCensor: range == null || censored || trimmed || _choosingPhrase
+          ? null
+          : () => _apply(range),
+      onRestore: hasEdits && widget.onRestoreRange != null
+          ? () {
+              widget.onRestoreRange!(range.startMs, range.endMs, null);
+              _clearSelection();
+            }
+          : null,
+      choosingPhrase: _choosingPhrase,
+      onPhrase: () {
+        setState(() => _choosingPhrase = !_choosingPhrase);
+        _publishSelection();
+      },
     );
   }
 
-  Future<void> _previewMute() => _perform(
-    () => widget.media.preview(
-      widget.source.path,
-      compilePlan(widget.source.durationMs, [...widget.edits, _mute]),
-    ),
-  );
+  void _publishSelection() {
+    final signature = _anchor == null && _selectedGap == null
+        ? 'none'
+        : '${_language.code}|$_anchor|$_end|$_selectedGap|$_choosingPhrase|${_gaps.where((g) => g.beforeWord == _selectedGap).map((g) => '${g.quietStartMs}:${g.quietEndMs}').join()}|${widget.edits.map((e) => '${e.kind}:${e.startMs}:${e.endMs}').join(',')}';
+    if (signature == _lastSelectionSignature) return;
+    _lastSelectionSignature = signature;
+    widget.onSelectionChanged?.call(_actions);
+  }
 
   Future<void> _removeModel() async {
     final approved = await showDialog<bool>(
@@ -229,155 +464,127 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
     }
   }
 
-  Widget _word(int index) {
-    final word = _transcript!.words[index];
-    final colors = Theme.of(context).colorScheme;
-    final first = _anchor == null ? -1 : math.min(_anchor!, _end!);
-    final last = _anchor == null ? -1 : math.max(_anchor!, _end!);
-    final selected = index >= first && index <= last;
-    final overlapping = widget.edits.where(
-      (e) => word.aligned && e.startMs < word.endMs! && e.endMs > word.startMs!,
-    );
-    final cut = overlapping.any((e) => e.kind == EditKind.cut);
-    final muted = overlapping.any((e) => e.kind == EditKind.mute);
-    return Semantics(
-      label:
-          '${word.text}${!word.aligned ? ', timing unavailable' : ''}${selected ? ', selected' : ''}${cut
-              ? ', cut'
-              : muted
-              ? ', muted'
-              : ''}',
-      child: InkWell(
-        key: ValueKey('transcript-word-$index'),
-        onTap: !_enabled
-            ? null
-            : () {
-                if (_anchor != null) {
-                  setState(() {
-                    _end = index;
-                    _error = null;
-                  });
-                } else {
-                  _hear(index);
-                }
-              },
-        onLongPress: !_enabled
-            ? null
-            : () => setState(() {
-                _anchor = index;
-                _end = index;
-                _error = null;
-              }),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
-          decoration: BoxDecoration(
-            color: selected
-                ? colors.primaryContainer
-                : muted
-                ? colors.secondaryContainer
-                : null,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            word.text,
-            style: TextStyle(
-              fontSize: 17,
-              height: 1.4,
-              color: !word.aligned ? colors.outline : colors.onSurface,
-              decoration: cut ? TextDecoration.lineThrough : null,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final transcript = _transcript;
-    final model = _model;
+    final transcript = _transcript, model = _model;
     final progress = _progress;
+    final settings = <Widget>[
+      DropdownButtonFormField<TranscriptLanguage>(
+        key: const Key('transcript-language'),
+        initialValue: _language,
+        decoration: const InputDecoration(
+          labelText: 'Video language',
+          border: OutlineInputBorder(),
+        ),
+        items: TranscriptLanguage.values
+            .map(
+              (language) => DropdownMenuItem(
+                value: language,
+                child: Text(language.label),
+              ),
+            )
+            .toList(),
+        onChanged: !_enabled
+            ? null
+            : (language) {
+                if (language == null) return;
+                setState(() {
+                  _language = language;
+                  _model = null;
+                  _checking = true;
+                  _anchor = null;
+                  _end = null;
+                  _selectedGap = null;
+                  _choosingPhrase = false;
+                  _error = null;
+                });
+                _publishSelection();
+                _refreshModel();
+              },
+      ),
+      const SizedBox(height: 8),
+      const Text(
+        'Audio and video stay on your phone. Internet is used only to download the selected model; transcription then works offline.',
+      ),
+      if (_language != TranscriptLanguage.english)
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(
+            'Hindi and mixed speech are experimental. Recognition may miss phrases; listen to the original before muting.',
+          ),
+        ),
+      if (_checking)
+        const Padding(
+          padding: EdgeInsets.all(8),
+          child: LinearProgressIndicator(),
+        ),
+      if (model != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          '${model.name} · ${model.sizeLabel} · ${model.ready ? 'Downloaded — ready offline' : 'Not downloaded'}',
+        ),
+        if (model.shared)
+          const Text('One shared download for Hindi and Hindi–English.'),
+      ],
+      FilledButton.icon(
+        onPressed: _enabled && !_checking && model != null ? _generate : null,
+        icon: const Icon(Icons.subtitles_outlined),
+        label: Text(
+          model == null || model.ready
+              ? (transcript == null
+                    ? 'Generate transcript'
+                    : 'Regenerate transcript')
+              : 'Download ${model.sizeLabel} & transcribe',
+        ),
+      ),
+      if (model?.ready == true)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: _enabled ? _removeModel : null,
+            child: const Text('Remove model download'),
+          ),
+        ),
+    ];
+    final actions = _actions;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Edit from the transcript',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<TranscriptLanguage>(
-          key: const Key('transcript-language'),
-          initialValue: _language,
-          decoration: const InputDecoration(
-            labelText: 'Video language',
-            border: OutlineInputBorder(),
-          ),
-          items: TranscriptLanguage.values
-              .map(
-                (language) => DropdownMenuItem(
-                  value: language,
-                  child: Text(language.label),
-                ),
-              )
-              .toList(),
-          onChanged: !_enabled
-              ? null
-              : (language) {
-                  if (language == null) return;
-                  setState(() {
-                    _language = language;
-                    _model = null;
-                    _checking = true;
-                    _anchor = null;
-                    _end = null;
-                    _error = null;
-                  });
-                  _refreshModel();
-                },
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Audio and video stay on your phone. Internet is used only to download the selected model; transcription then works offline.',
-        ),
-        if (_language != TranscriptLanguage.english)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text(
-              'Hindi and mixed speech are experimental. Recognition may miss phrases; listen to the original before muting.',
-            ),
-          ),
-        if (_checking)
-          const Padding(
-            padding: EdgeInsets.all(8),
-            child: LinearProgressIndicator(),
-          ),
-        if (model != null) ...[
-          const SizedBox(height: 8),
+        if (transcript == null) ...[
           Text(
-            '${model.name} · ${model.sizeLabel} · ${model.ready ? 'Downloaded — ready offline' : 'Not downloaded'}',
+            'Create your transcript',
+            style: Theme.of(context).textTheme.titleLarge,
           ),
-          if (model.shared)
-            const Text('One shared download for Hindi and Hindi–English.'),
-        ],
-        FilledButton.icon(
-          onPressed: _enabled && !_checking && model != null ? _generate : null,
-          icon: const Icon(Icons.subtitles_outlined),
-          label: Text(
-            model == null || model.ready
-                ? (transcript == null
-                      ? 'Generate transcript'
-                      : 'Regenerate transcript')
-                : 'Download ${model.sizeLabel} & transcribe',
+          const SizedBox(height: 8),
+          ...settings,
+        ] else ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Your transcript',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              Text(
+                _language.label,
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ],
           ),
-        ),
-        if (model?.ready == true)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: _enabled ? _removeModel : null,
-              child: const Text('Remove model download'),
+          const SizedBox(height: 6),
+          const Text('Tap a word to censor it. Tap a pause to shorten it.'),
+          if (_language != TranscriptLanguage.english)
+            const Text(
+              'Experimental recognition: check words against the original.',
             ),
+          ExpansionTile(
+            key: const Key('transcript-settings'),
+            title: const Text('Language & downloads'),
+            childrenPadding: const EdgeInsets.only(bottom: 12),
+            children: settings,
           ),
+        ],
         if (_working) ...[
           LinearProgressIndicator(value: progress?.fraction),
           Text(switch (progress?.phase) {
@@ -386,6 +593,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
             'verifying' => 'Verifying model download…',
             'transcribing' => 'Transcribing on this device…',
             'loading' => 'Loading speech model…',
+            'checkingPauses' => 'Checking pauses on this device…',
             _ => 'Preparing transcript…',
           }),
           if (_canCancel)
@@ -396,6 +604,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
                       setState(() => _cancelled = true);
                       try {
                         await widget.engine.cancel();
+                        if (_findingPauses) await widget.media.cancelAnalysis();
                       } catch (e) {
                         if (mounted) {
                           setState(() {
@@ -410,93 +619,41 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
               child: const Text('Cancel transcription'),
             ),
         ],
+
         if (transcript != null) ...[
-          const SizedBox(height: 12),
           if (transcript.words.isEmpty)
-            const Text(
-              'No speech was recognized. Try another language or a clearer recording.',
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                'No speech was recognized. Try another language or a clearer recording.',
+              ),
             )
-          else ...[
-            const Text(
-              'Tap a word to hear it. Long-press the first word, then tap the last word to select a phrase.',
+          else
+            TranscriptDocument(
+              transcript: transcript,
+              gaps: _gaps,
+              edits: widget.edits,
+              enabled: _enabled,
+              firstWord: _anchor == null ? null : math.min(_anchor!, _end!),
+              lastWord: _anchor == null ? null : math.max(_anchor!, _end!),
+              selectedGap: _selectedGap,
+              onWord: _selectWord,
+              onGap: _selectGap,
             ),
-            const Text(
-              'Muted words are shaded; cuts are struck through. Selected words use a separate highlight. Word times are approximate—preview every change.',
+          const Text(
+            'Pauses are checked against the audio. Word timing is approximate; review before exporting.',
+            style: TextStyle(fontSize: 12),
+          ),
+          if (_availableAnalysis == null && transcript.words.isNotEmpty)
+            TextButton.icon(
+              onPressed: _enabled ? _checkPauses : null,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Check pauses'),
             ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: math.min(
-                320.0,
-                math.max(96.0, transcript.words.length * 8.0),
-              ),
-              child: ListView.builder(
-                key: const Key('transcript-text'),
-                itemCount: (transcript.words.length / 25).ceil(),
-                itemBuilder: (context, paragraph) {
-                  final start = paragraph * 25;
-                  final end = math.min(start + 25, transcript.words.length);
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Wrap(
-                      spacing: 2,
-                      children: [for (var i = start; i < end; i++) _word(i)],
-                    ),
-                  );
-                },
-              ),
-            ),
-            if (_anchor != null) ...[
-              Text(
-                'Selected words ${math.min(_anchor!, _end!) + 1}–${math.max(_anchor!, _end!) + 1}',
-              ),
-              Wrap(
-                spacing: 8,
-                children: [
-                  OutlinedButton(
-                    onPressed: _enabled ? _previewMute : null,
-                    child: const Text('Preview selected mute'),
-                  ),
-                  FilledButton(
-                    onPressed: !_enabled
-                        ? null
-                        : () {
-                            try {
-                              final mute = _mute;
-                              compilePlan(widget.source.durationMs, [
-                                ...widget.edits,
-                                mute,
-                              ]);
-                              widget.onAdd(mute);
-                              setState(() {
-                                _anchor = null;
-                                _end = null;
-                                _error = null;
-                              });
-                            } catch (e) {
-                              setState(
-                                () => _error = (e is PlatformException
-                                    ? e.message ?? 'Speech operation failed.'
-                                    : e.toString()),
-                              );
-                            }
-                          },
-                    child: const Text('Add selected mute'),
-                  ),
-                  TextButton(
-                    onPressed: _enabled
-                        ? () => setState(() {
-                            _anchor = null;
-                            _end = null;
-                            _error = null;
-                          })
-                        : null,
-                    child: const Text('Clear word selection'),
-                  ),
-                ],
-              ),
-            ],
-          ],
+          if (_pauseNotice != null) Text(_pauseNotice!),
         ],
+        if (widget.onSelectionChanged == null && actions != null)
+          TranscriptActionBar(actions: actions, enabled: _enabled),
         if (_error != null) ...[
           Padding(
             padding: const EdgeInsets.only(top: 8),

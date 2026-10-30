@@ -14,6 +14,8 @@ class SilenceReview extends StatefulWidget {
     required this.edits,
     required this.onApply,
     required this.onBusyChanged,
+    this.analysis,
+    this.onAnalysis,
   });
   final MediaEngine engine;
   final SourceVideo source;
@@ -21,12 +23,29 @@ class SilenceReview extends StatefulWidget {
   final List<EditRange> edits;
   final ValueChanged<List<EditRange>> onApply;
   final ValueChanged<bool> onBusyChanged;
+  final AudioAnalysis? analysis;
+  final ValueChanged<AudioAnalysis>? onAnalysis;
   @override
   State<SilenceReview> createState() => _SilenceReviewState();
 }
 
 class _SilenceReviewState extends State<SilenceReview> {
   AudioAnalysis? _analysis;
+  @override
+  void initState() {
+    super.initState();
+    _analysis = widget.analysis;
+  }
+
+  @override
+  void didUpdateWidget(covariant SilenceReview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.analysis != null &&
+        !identical(widget.analysis, oldWidget.analysis)) {
+      _analysis = widget.analysis;
+    }
+  }
+
   double _threshold = -40;
   double _minimumPause = .8;
   double _padding = .15;
@@ -100,6 +119,7 @@ class _SilenceReviewState extends State<SilenceReview> {
         _analysis = result;
         _selected.clear();
       });
+      widget.onAnalysis?.call(result);
     }
   }, analyze: true);
 

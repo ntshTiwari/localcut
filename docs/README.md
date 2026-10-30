@@ -21,6 +21,11 @@ beside `lib/`; explanations are versioned with the code in Git.
    word timings, and explicit transcript muting.
    Added on `milestone/transcript-language-models`, based on `b490f03`.
 
+5. [Words and pauses in one editor](05-transcript-pause-editor/README.md) —
+   confirmed pause markers, tap selection, sticky actions, scoped restore,
+   and one review/export screen. Added on `milestone/transcript-pause-editor`,
+   based on `6c21745`.
+
 The first two guides were added in a documentation follow-up after their
 implementation commits. Later guides are included with their implementations.
 Existing commits have not been rewritten. Later changes should update

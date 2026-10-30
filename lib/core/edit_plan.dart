@@ -1,10 +1,11 @@
 enum EditKind { cut, mute }
 
 class EditRange {
-  const EditRange(this.startMs, this.endMs, this.kind);
+  const EditRange(this.startMs, this.endMs, this.kind, {this.label});
   final int startMs;
   final int endMs;
   final EditKind kind;
+  final String? label;
 }
 
 class RenderSegment {
