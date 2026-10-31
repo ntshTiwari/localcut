@@ -38,6 +38,10 @@ import UniformTypeIdentifiers
   }
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if call.method == "storageRoot" {
+      do { result(try projectDirectory().path) } catch { fail(error, result) }
+      return
+    }
     if call.method == "import" {
       guard pendingImport == nil else {
         result(FlutterError(code: "BUSY", message: "An import is already open.", details: nil)); return

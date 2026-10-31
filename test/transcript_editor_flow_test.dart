@@ -1,3 +1,4 @@
+import 'project_fakes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:localcut/core/edit_plan.dart';
@@ -31,7 +32,11 @@ Future<void> editor(WidgetTester tester, EditorMedia media) async {
       TranscriptWord('friend', 2800, 3300),
     ]);
   await tester.pumpWidget(
-    LocalCutApp(engine: media, transcriptionEngine: speech),
+    LocalCutApp(
+      engine: media,
+      transcriptionEngine: speech,
+      projects: MemoryProjects(),
+    ),
   );
   await tap(tester, find.text('Import video from Files'));
   await tap(tester, find.text('Create transcript'));
@@ -51,6 +56,9 @@ Future<void> tap(WidgetTester tester, Finder finder) async {
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
   await tester.tap(finder);
+  await tester.pumpAndSettle();
+  // Wait for debounced project autosave after meaningful user actions.
+  await tester.pump(const Duration(seconds: 1));
   await tester.pumpAndSettle();
 }
 

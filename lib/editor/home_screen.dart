@@ -1,3 +1,8 @@
+import 'project_library_screen.dart';
+import 'dart:io';
+import '../projects/project.dart';
+import '../projects/project_repository.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import '../design/app_theme.dart';
 import '../media/media_engine.dart';
@@ -5,7 +10,13 @@ import '../transcript/transcription_engine.dart';
 import 'editor_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.media, required this.speech});
+  const HomeScreen({
+    super.key,
+    required this.media,
+    required this.speech,
+    required this.projects,
+  });
+  final ProjectRepository projects;
   final MediaEngine media;
   final TranscriptionEngine speech;
   @override
@@ -13,35 +24,120 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  bool _importing = false;
+  bool _importing = false, _loading = true;
   String? _error;
+  ProjectListing _listing = const ProjectListing([]);
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  String _message(Object error) => error is FileSystemException
+      ? 'Could not read or save this project. Check available storage and try again.'
+      : error is StateError
+      ? error.message.toString()
+      : error is FormatException
+      ? error.message
+      : error is ArgumentError
+      ? error.message.toString()
+      : error is MissingPluginException
+      ? 'Local storage is unavailable. Fully restart or rebuild the iPhone app.'
+      : error is PlatformException
+      ? error.message ?? 'Project operation failed.'
+      : error.toString();
+  Future<void> _reload() async {
+    try {
+      final listing = await widget.projects.list();
+      if (mounted) {
+        setState(() {
+          _listing = listing;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = _message(e);
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _show(LocalProject project) async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EditorScreen(
+          initialSource: project.source,
+          initialProject: project,
+          projects: widget.projects,
+          engine: widget.media,
+          transcriptionEngine: widget.speech,
+        ),
+      ),
+    );
+    await _reload();
+  }
+
   Future<void> _import() async {
+    if (_importing) return;
     setState(() {
       _importing = true;
       _error = null;
     });
     try {
       final source = await widget.media.importVideo();
-      if (source != null && mounted) {
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => EditorScreen(
-              initialSource: source,
-              engine: widget.media,
-              transcriptionEngine: widget.speech,
-            ),
-          ),
-        );
-      }
+      if (source != null) await _show(await widget.projects.create(source));
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = _message(e));
     } finally {
       if (mounted) setState(() => _importing = false);
     }
   }
 
+  Widget _notices(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (_loading) const LinearProgressIndicator(),
+      if (_error != null) ...[
+        Text(
+          _error!,
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+        TextButton(
+          onPressed: () {
+            setState(() => _error = null);
+            _reload();
+          },
+          child: const Text('Retry loading projects'),
+        ),
+      ],
+      if (_listing.warnings.isNotEmpty)
+        Text(
+          'Some saved projects could not be read. Their files have been kept.',
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+    ],
+  );
+  Future<void> _recentProjects() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProjectLibraryScreen(
+          projects: widget.projects,
+          media: widget.media,
+          speech: widget.speech,
+        ),
+      ),
+    );
+    await _reload();
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => _home(context);
+
+  Widget _home(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const LocalCutBrand()),
@@ -52,6 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
               children: [
+                _notices(context),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Container(
@@ -142,6 +239,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         : 'Import video from Files',
                   ),
                 ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  key: const Key('recent-projects'),
+                  onPressed: _importing ? null : _recentProjects,
+                  icon: const Icon(Icons.history),
+                  label: const Text('Recent projects'),
+                ),
                 const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -179,11 +283,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: 'Review. Export. Upload.',
                   detail: 'Save a new video with your original untouched.',
                 ),
-                if (_error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: Text(_error!, style: TextStyle(color: colors.error)),
-                  ),
               ],
             ),
           ),

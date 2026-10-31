@@ -135,3 +135,7 @@ Silence detection is still volume-based. A suggested range may contain quiet
 speech, so marking everything is an optional shortcut rather than an automatic
 export. This step adds neither speech-based retake detection nor a background
 processing backend.
+
+Later change: [step 10](../10-saved-projects/README.md) persists pause decisions,
+detector settings, and the visited pause as part of a saved project. Undo history
+remains in memory.

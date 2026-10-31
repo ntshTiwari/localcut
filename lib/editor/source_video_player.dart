@@ -21,7 +21,11 @@ class SourceVideoPlayer extends StatefulWidget {
     required this.source,
     required this.enabled,
     required this.onOpenOriginal,
+    this.initialPositionMs = 0,
+    this.onPositionChanged,
   });
+  final int initialPositionMs;
+  final ValueChanged<int>? onPositionChanged;
   final SourceVideo source;
   final bool enabled;
   final Future<void> Function() onOpenOriginal;
@@ -32,6 +36,7 @@ class SourceVideoPlayer extends StatefulWidget {
 class SourceVideoPlayerState extends State<SourceVideoPlayer>
     with WidgetsBindingObserver {
   VideoPlayerController? _controller;
+  int _lastReportedSecond = -1;
   String? _error;
   bool _loading = true;
   @override
@@ -67,6 +72,23 @@ class SourceVideoPlayerState extends State<SourceVideoPlayer>
     _controller = controller;
     try {
       await controller.initialize().timeout(const Duration(seconds: 20));
+      if (!mounted || !identical(controller, _controller)) return;
+      await controller.seekTo(
+        Duration(
+          milliseconds: widget.initialPositionMs.clamp(
+            0,
+            controller.value.duration.inMilliseconds,
+          ),
+        ),
+      );
+      controller.addListener(() {
+        if (!mounted || !identical(controller, _controller)) return;
+        final position = controller.value.position;
+        if (position.inSeconds != _lastReportedSecond) {
+          _lastReportedSecond = position.inSeconds;
+          widget.onPositionChanged?.call(position.inMilliseconds);
+        }
+      });
       if (mounted && identical(controller, _controller)) {
         setState(() => _loading = false);
       }

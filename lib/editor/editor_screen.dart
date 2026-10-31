@@ -1,3 +1,8 @@
+import '../projects/project.dart';
+import '../projects/project_repository.dart';
+import '../projects/project_autosave.dart';
+import '../transcript/transcript.dart';
+import 'package:flutter/scheduler.dart';
 import '../core/pause_review.dart';
 import 'selection_screen.dart';
 import 'inline_preview.dart';
@@ -22,7 +27,11 @@ class EditorScreen extends StatefulWidget {
     required this.initialSource,
     required this.engine,
     required this.transcriptionEngine,
+    this.initialProject,
+    this.projects,
   });
+  final LocalProject? initialProject;
+  final ProjectRepository? projects;
   final SourceVideo initialSource;
   final MediaEngine engine;
   final TranscriptionEngine transcriptionEngine;
@@ -30,7 +39,180 @@ class EditorScreen extends StatefulWidget {
   State<EditorScreen> createState() => _EditorScreenState();
 }
 
-class _EditorScreenState extends State<EditorScreen> {
+class _EditorScreenState extends State<EditorScreen>
+    with WidgetsBindingObserver {
+  LocalProject? _project;
+  ProjectAutosave? _autosave;
+  final Map<TranscriptLanguage, VideoTranscript> _transcripts = {};
+  TranscriptLanguage _language = TranscriptLanguage.english;
+  int _playbackMs = 0, _lastPlaybackSave = 0;
+  bool _savePosted = false, _recoveryNotice = false, _saveFailureShown = false;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _project = widget.initialProject;
+    if (_project case final project?) {
+      _edits.addAll(project.edits);
+      _analysis = project.analysis;
+      _transcripts.addAll(project.transcripts);
+      _language = project.language;
+      _playbackMs = project.playbackMs;
+      _lastPlaybackSave = _playbackMs;
+      _exportPath = project.exportPath;
+      _recoveryNotice = project.recovered;
+      _pauseReview.dispose();
+      _pauseReview = PauseReviewSession.fromMap(
+        project.pauseReview,
+        project.source.durationMs,
+      );
+    }
+    _pauseReview.addListener(_scheduleSave);
+    _pageScroll.addListener(_scheduleSave);
+    _setupAutosave();
+  }
+
+  void _setupAutosave() {
+    if (widget.projects == null || _project == null) return;
+    _autosave = ProjectAutosave(
+      repository: widget.projects!,
+      capture: _capture,
+      onSaved: (snapshot) {
+        _project = snapshot;
+      },
+    )..addListener(_saveStateChanged);
+  }
+
+  void _saveStateChanged() {
+    if (_autosave?.state == SaveState.saved) _saveFailureShown = false;
+    if (_autosave?.state != SaveState.failed || _saveFailureShown) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _autosave?.state != SaveState.failed ||
+          _saveFailureShown) {
+        return;
+      }
+      _saveFailureShown = true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Autosave failed. Retry before closing the project.',
+          ),
+          action: SnackBarAction(
+            label: 'Retry autosave',
+            onPressed: () {
+              final saver = _autosave;
+              if (saver != null) {
+                unawaited(saver.flush().catchError((Object _) {}));
+              }
+            },
+          ),
+        ),
+      );
+    });
+  }
+
+  LocalProject _capture() => _project!.copyWith(
+    updatedAt: DateTime.now(),
+    edits: _edits,
+    transcripts: _transcripts,
+    language: _language,
+    analysis: _analysis,
+    pauseReview: _pauseReview.toMap(),
+    scrollOffset: _pageScroll.hasClients
+        ? _pageScroll.offset.clamp(0, double.infinity)
+        : _project!.scrollOffset,
+    playbackMs: _playbackMs.clamp(0, _source.durationMs),
+    exportPath: _exportPath,
+    clearExport: _exportPath == null,
+    recovered: false,
+  );
+  void _scheduleSave() {
+    if (!mounted || _autosave == null) return;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      if (_savePosted) return;
+      _savePosted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _savePosted = false;
+        if (mounted) _autosave?.schedule();
+      });
+    } else {
+      _autosave!.schedule();
+    }
+  }
+
+  Future<void> _flushSave() async {
+    if (_autosave == null) return;
+    _scheduleSave();
+    await _autosave!.flush();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      unawaited(_flushSave().catchError((Object _) {}));
+    }
+  }
+
+  void _receivedAnalysis(AudioAnalysis analysis) {
+    setState(() => _analysis = analysis);
+    _scheduleSave();
+  }
+
+  Widget _saveStatus() {
+    final autosave = _autosave;
+    if (autosave == null) return const SizedBox.shrink();
+    return AnimatedBuilder(
+      animation: autosave,
+      builder: (context, _) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  autosave.state == SaveState.failed
+                      ? Icons.error_outline
+                      : Icons.save_outlined,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(switch (autosave.state) {
+                    SaveState.saved => 'Saved on this device',
+                    SaveState.pending => 'Changes waiting to save…',
+                    SaveState.saving => 'Saving project…',
+                    SaveState.failed => 'Could not autosave',
+                  }, style: Theme.of(context).textTheme.bodySmall),
+                ),
+                if (autosave.state == SaveState.failed)
+                  TextButton(
+                    onPressed: () =>
+                        unawaited(autosave.flush().catchError((Object _) {})),
+                    child: const Text('Retry save'),
+                  ),
+              ],
+            ),
+            if (autosave.state == SaveState.failed)
+              Text(
+                autosave.error ?? 'Free storage and retry before leaving.',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            if (_recoveryNotice)
+              const Text(
+                'Recovered a previous autosave. Check your latest changes.',
+                style: TextStyle(fontSize: 12),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   late SourceVideo _source = widget.initialSource;
   late final MediaEngine _media = PlaybackMediaEngine(
     widget.engine,
@@ -39,9 +221,15 @@ class _EditorScreenState extends State<EditorScreen> {
   );
   final _preview = InlinePreviewController();
   var _pauseReview = PauseReviewSession();
-  final _pageScroll = ScrollController();
+  late final _pageScroll = ScrollController(
+    initialScrollOffset: widget.initialProject?.scrollOffset ?? 0,
+  );
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _autosave?.dispose();
+    _pauseReview.removeListener(_scheduleSave);
+    _pageScroll.removeListener(_scheduleSave);
     _pauseReview.dispose();
     _pageScroll.dispose();
     _selection.dispose();
@@ -106,6 +294,7 @@ class _EditorScreenState extends State<EditorScreen> {
       _exportPath = null;
       _error = null;
     });
+    _scheduleSave();
   }
 
   void _restore(int start, int end, EditKind? kind) {
@@ -117,10 +306,11 @@ class _EditorScreenState extends State<EditorScreen> {
       _exportPath = null;
       _error = null;
     });
+    _scheduleSave();
   }
 
   Future<bool> _confirmLeave({bool replace = false}) async {
-    if (_edits.isEmpty) return true;
+    if (_project != null || _edits.isEmpty) return true;
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
@@ -146,6 +336,20 @@ class _EditorScreenState extends State<EditorScreen> {
   Future<void> _leave() async {
     if (_busy || !await _confirmLeave() || !mounted) return;
     await _pause();
+    try {
+      await _flushSave();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not save the latest changes. Retry autosave before leaving.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
     if (!mounted) return;
     setState(() => _allowLeave = true);
     await WidgetsBinding.instance.endOfFrame;
@@ -157,12 +361,27 @@ class _EditorScreenState extends State<EditorScreen> {
     await _pause();
     setState(() => _busy = true);
     try {
+      await _flushSave();
       final source = await widget.engine.importVideo();
       if (source != null && mounted) {
+        final nextProject = widget.projects == null
+            ? null
+            : await widget.projects!.create(source);
+        if (!mounted) return;
+        _autosave?.dispose();
+        _autosave = null;
         setState(() {
           _preview.close();
+          _pauseReview.removeListener(_scheduleSave);
           _pauseReview.dispose();
-          _pauseReview = PauseReviewSession();
+          _pauseReview = PauseReviewSession()..addListener(_scheduleSave);
+          _project = nextProject;
+          _transcripts.clear();
+          _language = TranscriptLanguage.english;
+          _playbackMs = 0;
+          _lastPlaybackSave = 0;
+          _recoveryNotice = false;
+          _saveFailureShown = false;
           _source = source;
           _transcript = GlobalKey<TranscriptPanelState>();
           _edits.clear();
@@ -172,6 +391,8 @@ class _EditorScreenState extends State<EditorScreen> {
           _selectionError.value = null;
           _exportPath = null;
         });
+        if (_pageScroll.hasClients) _pageScroll.jumpTo(0);
+        _setupAutosave();
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -224,7 +445,7 @@ class _EditorScreenState extends State<EditorScreen> {
           edits: _edits,
           analysis: _analysis,
           pauseSession: _pauseReview,
-          onAnalysis: (analysis) => setState(() => _analysis = analysis),
+          onAnalysis: _receivedAnalysis,
           onActivity: _activity,
           onApply: _accept,
         ),
@@ -252,11 +473,17 @@ class _EditorScreenState extends State<EditorScreen> {
           media: widget.engine,
           edits: _edits,
           initialExportPath: _exportPath,
-          onRemove: (index) => setState(() {
-            _edits.removeAt(index);
-            _exportPath = null;
-          }),
-          onExported: (path) => setState(() => _exportPath = path),
+          onRemove: (index) {
+            setState(() {
+              _edits.removeAt(index);
+              _exportPath = null;
+            });
+            _scheduleSave();
+          },
+          onExported: (path) {
+            setState(() => _exportPath = path);
+            _scheduleSave();
+          },
         ),
       ),
     );
@@ -267,7 +494,7 @@ class _EditorScreenState extends State<EditorScreen> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return PopScope(
-      canPop: _allowLeave || (_edits.isEmpty && !_busy),
+      canPop: _allowLeave || (_project == null && _edits.isEmpty && !_busy),
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && !_busy) _leave();
       },
@@ -282,7 +509,7 @@ class _EditorScreenState extends State<EditorScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _source.name ?? 'Your video',
+                _project?.title ?? _source.name ?? 'Your video',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleMedium,
@@ -307,7 +534,10 @@ class _EditorScreenState extends State<EditorScreen> {
                 if (value == 'timing') _timing();
               },
               itemBuilder: (_) => const [
-                PopupMenuItem(value: 'replace', child: Text('Replace video')),
+                PopupMenuItem(
+                  value: 'replace',
+                  child: Text('Import another video'),
+                ),
                 PopupMenuItem(
                   value: 'language',
                   child: Text('Language & downloads'),
@@ -328,6 +558,7 @@ class _EditorScreenState extends State<EditorScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                _saveStatus(),
                 if (_actions != null) ...[
                   SizedBox(
                     width: double.infinity,
@@ -391,6 +622,14 @@ class _EditorScreenState extends State<EditorScreen> {
                         source: _source,
                         enabled: !_busy,
                         onOpenOriginal: _watchOriginal,
+                        initialPositionMs: _playbackMs,
+                        onPositionChanged: (position) {
+                          _playbackMs = position.clamp(0, _source.durationMs);
+                          if ((_playbackMs - _lastPlaybackSave).abs() >= 5000) {
+                            _lastPlaybackSave = _playbackMs;
+                            _scheduleSave();
+                          }
+                        },
                       ),
                     ),
                   ),
@@ -430,7 +669,16 @@ class _EditorScreenState extends State<EditorScreen> {
                         edits: _edits,
                         enabled: !_busy,
                         analysis: _analysis,
-                        onAnalysis: (a) => setState(() => _analysis = a),
+                        onAnalysis: _receivedAnalysis,
+                        initialLanguage: _language,
+                        initialTranscripts: _transcripts,
+                        onStateChanged: (language, transcripts) {
+                          _language = language;
+                          _transcripts
+                            ..clear()
+                            ..addAll(transcripts);
+                          _scheduleSave();
+                        },
                         onBusyChanged: _activity,
                         onAdd: (edit) => _accept([edit]),
                         onSelectionChanged: _selected,

@@ -23,7 +23,68 @@ class PauseReviewSession extends ChangeNotifier {
       _pauses.where((p) => decision(p) == PauseDecision.trim).toList();
   int get reviewed => _pauses.where((p) => decision(p) != null).length;
   bool get canUndo => _history.isNotEmpty;
-  String? lastVisitedId;
+  String? _lastVisitedId;
+  String? get lastVisitedId => _lastVisitedId;
+  set lastVisitedId(String? value) {
+    if (_lastVisitedId == value) return;
+    _lastVisitedId = value;
+    notifyListeners();
+  }
+
+  Map<String, dynamic> toMap() => {
+    'settings': {
+      'thresholdDb': settings.thresholdDb,
+      'minimumPauseMs': settings.minimumPauseMs,
+      'paddingMs': settings.paddingMs,
+    },
+    'pauses': [
+      for (final p in _pauses) {'startMs': p.startMs, 'endMs': p.endMs},
+    ],
+    'decisions': {for (final e in _decisions.entries) e.key: e.value.name},
+    'lastVisitedId': _lastVisitedId,
+  };
+  static PauseReviewSession fromMap(Map<String, dynamic> map, int durationMs) {
+    final session = PauseReviewSession();
+    if (map.isEmpty) return session;
+    final config = map['settings'] as Map;
+    final threshold = (config['thresholdDb'] as num).toDouble(),
+        minimum = (config['minimumPauseMs'] as num).toInt(),
+        padding = (config['paddingMs'] as num).toInt();
+    if (!threshold.isFinite ||
+        threshold > -20 ||
+        threshold < -60 ||
+        minimum < 400 ||
+        minimum > 2000 ||
+        padding < 50 ||
+        padding > 300) {
+      throw const FormatException('Invalid pause settings.');
+    }
+    session.settings = SilenceSettings(
+      thresholdDb: threshold,
+      minimumPauseMs: minimum,
+      paddingMs: padding,
+    );
+    for (final raw in map['pauses'] as List) {
+      final start = (raw['startMs'] as num).toInt(),
+          end = (raw['endMs'] as num).toInt();
+      if (start < 0 || end <= start || end > durationMs) {
+        throw const FormatException('Invalid saved pause.');
+      }
+      session._pauses.add(EditRange(start, end, EditKind.cut));
+    }
+    final valid = session._pauses.map(pauseId).toSet();
+    for (final entry in (map['decisions'] as Map).entries) {
+      if (!valid.contains(entry.key)) {
+        throw const FormatException('Invalid saved pause decision.');
+      }
+      session._decisions[entry.key as String] = PauseDecision.values.byName(
+        entry.value as String,
+      );
+    }
+    final visited = map['lastVisitedId'] as String?;
+    session._lastVisitedId = valid.contains(visited) ? visited : null;
+    return session;
+  }
 
   void sync(List<EditRange> pauses) {
     if (listEquals(
@@ -37,14 +98,14 @@ class PauseReviewSession extends ChangeNotifier {
     _decisions.removeWhere((key, _) => !valid.contains(key));
     // History cannot restore decisions against changed detection boundaries.
     _history.clear();
-    if (!valid.contains(lastVisitedId)) lastVisitedId = null;
+    if (!valid.contains(_lastVisitedId)) _lastVisitedId = null;
     notifyListeners();
   }
 
   void reset() {
     _decisions.clear();
     _history.clear();
-    lastVisitedId = null;
+    _lastVisitedId = null;
     notifyListeners();
   }
 

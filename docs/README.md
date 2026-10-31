@@ -43,6 +43,10 @@ beside `lib/`; explanations are versioned with the code in Git.
    filtered/sorted decisions, one-pause reviewer, compact preview modes, automatic
    advance and Undo. Added on `milestone/guided-pause-review`, based on `b14888d`.
 
+10. [Saved projects and autosave](10-saved-projects/README.md) — Recent projects,
+    local snapshots, backup recovery, resume, rename/delete, and save status.
+    Added on `milestone/saved-projects`, based on `8ae3ab1`.
+
 The first two guides were added in a documentation follow-up after their
 implementation commits. Later guides are included with their implementations.
 Existing commits have not been rewritten. Later changes should update

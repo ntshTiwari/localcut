@@ -319,7 +319,9 @@ class _PauseReviewerScreenState extends State<PauseReviewerScreen> {
   @override
   void initState() {
     super.initState();
-    widget.session.lastVisitedId = pauseId(_pause);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.session.lastVisitedId = pauseId(_pause);
+    });
   }
 
   @override

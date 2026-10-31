@@ -28,6 +28,9 @@ class TranscriptPanel extends StatefulWidget {
     this.analysis,
     this.onAnalysis,
     this.onError,
+    this.initialLanguage = TranscriptLanguage.english,
+    this.initialTranscripts = const {},
+    this.onStateChanged,
   });
   final TranscriptionEngine engine;
   final MediaEngine media;
@@ -42,6 +45,14 @@ class TranscriptPanel extends StatefulWidget {
   final AudioAnalysis? analysis;
   final ValueChanged<AudioAnalysis>? onAnalysis;
   final ValueChanged<String?>? onError;
+  final TranscriptLanguage initialLanguage;
+  final Map<TranscriptLanguage, VideoTranscript> initialTranscripts;
+  final void Function(
+    TranscriptLanguage,
+    Map<TranscriptLanguage, VideoTranscript>,
+  )?
+  onStateChanged;
+
   @override
   State<TranscriptPanel> createState() => TranscriptPanelState();
 }
@@ -142,6 +153,8 @@ class TranscriptPanelState extends State<TranscriptPanel> {
   @override
   void initState() {
     super.initState();
+    _language = widget.initialLanguage;
+    _transcripts.addAll(widget.initialTranscripts);
     _refreshModel();
   }
 
@@ -299,6 +312,7 @@ class TranscriptPanelState extends State<TranscriptPanel> {
         _end = null;
       });
       if (analysis != null) widget.onAnalysis?.call(analysis);
+      widget.onStateChanged?.call(_language, Map.of(_transcripts));
     }
   }, cancellable: true);
 
@@ -600,6 +614,7 @@ class TranscriptPanelState extends State<TranscriptPanel> {
                   _error = null;
                 });
                 _publishSelection();
+                widget.onStateChanged?.call(_language, Map.of(_transcripts));
                 _refreshModel();
               },
       ),

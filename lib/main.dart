@@ -1,3 +1,4 @@
+import 'projects/project_repository.dart';
 import 'package:flutter/material.dart';
 import 'design/app_theme.dart';
 import 'editor/home_screen.dart';
@@ -13,7 +14,9 @@ class LocalCutApp extends StatelessWidget {
     this.engine,
     this.transcriptionEngine,
     this.themeMode = ThemeMode.system,
+    this.projects,
   });
+  final ProjectRepository? projects;
   final MediaEngine? engine;
   final TranscriptionEngine? transcriptionEngine;
   final ThemeMode themeMode;
@@ -27,6 +30,7 @@ class LocalCutApp extends StatelessWidget {
     home: HomeScreen(
       media: engine ?? PlatformMediaEngine(),
       speech: transcriptionEngine ?? PlatformTranscriptionEngine(),
+      projects: projects ?? FileProjectRepository(),
     ),
   );
 }

@@ -54,6 +54,14 @@ For long recordings, pause suggestions open a compact overview and guided
 one-at-a-time reviewer with filters, longest-first sorting, progress, and Undo.
 See [step 9](docs/09-guided-pause-review/README.md) for the current pause workflow.
 
+## Saved projects
+
+The original Home screen has a Recent projects button opening a separate library
+with name search, change filters, sorting, resume, rename, and confirmed deletion. Autosave retains
+transcripts, edits, pause-review decisions/settings, and reading/playback positions
+without making another video copy. See [step 10](docs/10-saved-projects/README.md).
+**Fully rebuild the iOS app for the new local storage hook; hot reload is insufficient.**
+
 ## Implemented
 
 - Import a local video using the iOS Files picker (copy into app storage).
@@ -76,8 +84,9 @@ See [step 9](docs/09-guided-pause-review/README.md) for the current pause workfl
 Retake markers (for example, saying “Editor, retake”), suggested take grouping,
 and user-approved take removal are planned for a later milestone.
 
-Project reopening, persistent transcripts, numeric export progress, Photos
-import, and Android media processing are subsequent milestones.
+Project reopening and persistent transcripts are now implemented in step 10.
+Global Undo/Redo, transcript search, long-video UI profiling, numeric export
+progress, Photos import, and Android media processing remain later milestones.
 
 ## Run on your iPhone
 
@@ -229,3 +238,5 @@ Timestamp playback lives on `milestone/range-preview`, based on `73f14bf`.
 The simplified navigation lives on `milestone/editor-navigation`, building on the range-preview work.
 
 Guided pause review lives on `milestone/guided-pause-review`, based on `b14888d`.
+
+Saved projects lives on `milestone/saved-projects`, based on `8ae3ab1`.

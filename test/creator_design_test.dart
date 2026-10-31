@@ -1,3 +1,4 @@
+import 'project_fakes.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -47,22 +48,17 @@ void main() {
     },
   );
 
-  testWidgets('leaving proposed edits requires an explicit discard', (
+  testWidgets('leaving proposed edits autosaves without a discard dialog', (
     tester,
   ) async {
     await editor(tester, EditorMedia());
     await tap(tester, find.byKey(const ValueKey('transcript-word-0')));
     await tap(tester, find.text('Censor'));
+    expect(find.text('Saved on this device'), findsOneWidget);
     await tap(tester, find.byTooltip('Back to home'));
-    expect(find.text('Leave this edit?'), findsOneWidget);
-    await tap(tester, find.text('Keep editing'));
-    expect(find.text('Review 1 change'), findsOneWidget);
-    await tap(tester, find.byTooltip('Back to home'));
-    await tester.tap(find.text('Leave edit'));
-    await tester.pumpAndSettle();
-    expect(find.text('Import video from Files'), findsOneWidget);
+    expect(find.text('Leave this edit?'), findsNothing);
+    expect(find.text('Recent projects'), findsOneWidget);
   });
-
   testWidgets('late completion after export cancel never publishes output', (
     tester,
   ) async {
@@ -112,6 +108,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(finder);
     await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
   }
 
   for (final dark in [false, true]) {
@@ -126,6 +124,7 @@ void main() {
       await tester.pumpWidget(
         LocalCutApp(
           engine: EditorMedia(),
+          projects: MemoryProjects(),
           transcriptionEngine: speech,
           themeMode: dark ? ThemeMode.dark : ThemeMode.light,
         ),
