@@ -26,6 +26,10 @@ beside `lib/`; explanations are versioned with the code in Git.
    and one review/export screen. Added on `milestone/transcript-pause-editor`,
    based on `6c21745`.
 
+6. [Creator workspace and theme](06-creator-design/README.md) — Home, inline local
+   playback, transcript/timing sheets, review/export screens, and system themes.
+   Added on `milestone/creator-design`, based on `3b270d6`.
+
 The first two guides were added in a documentation follow-up after their
 implementation commits. Later guides are included with their implementations.
 Existing commits have not been rewritten. Later changes should update

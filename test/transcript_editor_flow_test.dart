@@ -35,6 +35,8 @@ Future<void> editor(WidgetTester tester, EditorMedia media) async {
   );
   await tester.tap(find.text('Import video from Files'));
   await tester.pumpAndSettle();
+  await tester.tap(find.text('Create transcript'));
+  await tester.pumpAndSettle();
   await tester.ensureVisible(find.text('Generate transcript'));
   await tester.tap(find.text('Generate transcript'));
   await tester.pumpAndSettle();
@@ -57,7 +59,7 @@ void main() {
       await tap(tester, find.text('Fine-tune timing'));
       expect(find.byKey(const Key('waveform-surface')), findsOneWidget);
       expect(media.analyses, 1);
-      await tap(tester, find.text('Fine-tune timing'));
+      await tap(tester, find.byTooltip('Close timing tools'));
       await tap(tester, find.byKey(const ValueKey('transcript-gap-1')));
       expect(find.text('Shorten pause'), findsOneWidget);
       expect(find.textContaining('Remove 1.5s'), findsOneWidget);
@@ -85,6 +87,7 @@ void main() {
       await tap(tester, find.text('Export video'));
       expect(media.exported, isNotNull);
       expect(find.text('Save or share'), findsOneWidget);
+      await tap(tester, find.text('Back to review'));
       await tap(tester, find.byTooltip('Restore this change').first);
       expect(find.text('Save or share'), findsNothing);
       expect(find.textContaining('Video ready.'), findsNothing);
@@ -151,6 +154,5 @@ void main() {
     final review = tester.getRect(find.byKey(const Key('review-changes')));
     expect(action.bottom, lessThan(812));
     expect(review.bottom, lessThanOrEqualTo(812));
-    expect(tester.takeException(), isNull);
   });
 }

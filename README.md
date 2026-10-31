@@ -35,6 +35,14 @@ whisper.cpp native library through a local Swift package. Hot reload is not enou
 See [step 4](docs/04-transcript-models/README.md) for setup, model storage, download
 verification, the code walkthrough, tests, and limitations.
 
+## Creator workspace
+
+The latest UI uses YouTube-inspired red actions and neutral light/dark surfaces.
+Home → Editor → Review/export keeps setup and advanced tools in bottom sheets.
+See [step 6](docs/06-creator-design/README.md) for the code and logic.
+**Fully restart/rebuild the iOS app after pulling this milestone** to register
+its new `video_player` plugin; hot reload is insufficient.
+
 ## Implemented
 
 - Import a local video using the iOS Files picker (copy into app storage).
@@ -53,6 +61,9 @@ verification, the code walkthrough, tests, and limitations.
 - Hear original context, select suggestions, preview them, and explicitly add
   them to proposed edits before the existing export approval step.
 - Cancel analysis. Missing audio and entirely quiet videos produce no cuts.
+
+Retake markers (for example, saying “Editor, retake”), suggested take grouping,
+and user-approved take removal are planned for a later milestone.
 
 Project reopening, persistent transcripts, numeric export progress, Photos
 import, and Android media processing are subsequent milestones.
@@ -199,4 +210,5 @@ on `milestone/waveform-selection`, based on the pushed silence milestone.
 Transcript models live on `milestone/transcript-language-models`, based on
 waveform commit `b490f03`. The unified transcript/pause editor lives on
 `milestone/transcript-pause-editor`, based on `6c21745`. `main` retains the first
-working prototype until the user requests a merge.
+working prototype until the user requests a merge. The creator UI milestone
+lives on `milestone/creator-design`, based on accepted commit `3b270d6`.

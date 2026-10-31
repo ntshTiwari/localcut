@@ -38,10 +38,60 @@ class TranscriptPanel extends StatefulWidget {
   final AudioAnalysis? analysis;
   final ValueChanged<AudioAnalysis>? onAnalysis;
   @override
-  State<TranscriptPanel> createState() => _TranscriptPanelState();
+  State<TranscriptPanel> createState() => TranscriptPanelState();
 }
 
-class _TranscriptPanelState extends State<TranscriptPanel> {
+class TranscriptPanelState extends State<TranscriptPanel> {
+  final ValueNotifier<int> _sheetUpdates = ValueNotifier(0);
+  void _update(VoidCallback action) {
+    if (!mounted) return;
+    super.setState(action);
+    _sheetUpdates.value++;
+  }
+
+  bool _settingsOpen = false;
+  Future<void> openSettings() async {
+    if (_settingsOpen) return;
+    _update(() => _settingsOpen = true);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      isDismissible: false,
+      enableDrag: false,
+      builder: (sheetContext) => AnimatedBuilder(
+        animation: _sheetUpdates,
+        builder: (_, _) => PopScope(
+          canPop: !_working,
+          child: SizedBox(
+            height: MediaQuery.sizeOf(context).height * .8,
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text('Transcript settings'),
+                  trailing: IconButton(
+                    tooltip: 'Close transcript settings',
+                    icon: const Icon(Icons.close),
+                    onPressed: _working
+                        ? null
+                        : () => Navigator.pop(sheetContext),
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: _content(sheetContext, settingsOnly: true),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (mounted) _update(() => _settingsOpen = false);
+  }
+
   TranscriptLanguage _language = TranscriptLanguage.english;
   final Map<TranscriptLanguage, VideoTranscript> _transcripts = {};
   SpeechModel? _model;
@@ -103,6 +153,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
   @override
   void dispose() {
     _timer?.cancel();
+    _sheetUpdates.dispose();
     super.dispose();
   }
 
@@ -111,14 +162,14 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
     try {
       final model = await widget.engine.model(language);
       if (mounted && language == _language) {
-        setState(() {
+        _update(() {
           _model = model;
           _checking = false;
         });
       }
     } catch (e) {
       if (mounted && language == _language) {
-        setState(() {
+        _update(() {
           _checking = false;
           _error = (e is PlatformException
               ? e.message ?? 'Speech operation failed.'
@@ -133,7 +184,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
     _polling = true;
     try {
       final progress = await widget.engine.progress();
-      if (mounted && _working) setState(() => _progress = progress);
+      if (mounted && _working) _update(() => _progress = progress);
     } catch (_) {
       /* The main operation reports actionable errors. */
     } finally {
@@ -145,7 +196,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
     Future<void> Function() action, {
     bool cancellable = false,
   }) async {
-    setState(() {
+    _update(() {
       _working = true;
       _canCancel = cancellable;
       _cancelled = false;
@@ -164,7 +215,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
       if (_cancelled) throw StateError('Canceled');
     } catch (e) {
       if (mounted) {
-        setState(
+        _update(
           () => _error = _cancelled
               ? 'Canceled. Existing transcript and edits are unchanged.'
               : (e is PlatformException
@@ -176,7 +227,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
       _timer?.cancel();
       _timer = null;
       if (mounted) {
-        setState(() {
+        _update(() {
           _working = false;
           _canCancel = false;
           _progress = null;
@@ -198,15 +249,13 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
     if (_cancelled) return;
     if (!model.ready) {
       if (mounted) {
-        setState(
-          () => _progress = const SpeechProgress('downloading', null, 0),
-        );
+        _update(() => _progress = const SpeechProgress('downloading', null, 0));
       }
       await widget.engine.download(_language);
     }
     if (_cancelled) return;
     if (mounted) {
-      setState(() => _progress = const SpeechProgress('loading', null, 0));
+      _update(() => _progress = const SpeechProgress('loading', null, 0));
     }
     final transcript = await widget.engine.transcribe(
       widget.source.path,
@@ -217,7 +266,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
     if (analysis == null && !_cancelled) {
       _findingPauses = true;
       if (mounted) {
-        setState(
+        _update(
           () => _progress = const SpeechProgress('checkingPauses', null, 0),
         );
       }
@@ -225,7 +274,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
         analysis = await widget.media.analyzeAudio(widget.source.path);
       } catch (_) {
         if (mounted && !_cancelled) {
-          setState(
+          _update(
             () => _pauseNotice =
                 'Transcript ready. Pause checking is unavailable; you can still censor words.',
           );
@@ -235,7 +284,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
       }
     }
     if (mounted && !_cancelled) {
-      setState(() {
+      _update(() {
         _analysis = analysis;
         if (analysis != null) _pauseNotice = null;
         _transcripts[_language] = transcript;
@@ -250,7 +299,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
       transcriptMute(_transcript!, _anchor!, _end!, widget.source.durationMs);
 
   void _clearSelection() {
-    setState(() {
+    _update(() {
       _anchor = null;
       _end = null;
       _selectedGap = null;
@@ -260,7 +309,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
   }
 
   void _selectWord(int index) {
-    setState(() {
+    _update(() {
       _selectedGap = null;
       _error = null;
       if (_choosingPhrase && _anchor != null) {
@@ -275,7 +324,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
   }
 
   void _selectGap(TranscriptGap gap) {
-    setState(() {
+    _update(() {
       _selectedGap = gap.beforeWord;
       _anchor = null;
       _end = null;
@@ -301,17 +350,17 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
       widget.onAdd(edit);
       _clearSelection();
     } catch (e) {
-      setState(() => _error = e.toString());
+      _update(() => _error = e.toString());
     }
   }
 
   Future<void> _checkPauses() => _perform(() async {
     _findingPauses = true;
-    setState(() => _progress = const SpeechProgress('checkingPauses', null, 0));
+    _update(() => _progress = const SpeechProgress('checkingPauses', null, 0));
     try {
       final analysis = await widget.media.analyzeAudio(widget.source.path);
       if (mounted && !_cancelled) {
-        setState(() {
+        _update(() {
           _analysis = analysis;
           _pauseNotice = null;
         });
@@ -422,7 +471,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
           : null,
       choosingPhrase: _choosingPhrase,
       onPhrase: () {
-        setState(() => _choosingPhrase = !_choosingPhrase);
+        _update(() => _choosingPhrase = !_choosingPhrase);
         _publishSelection();
       },
     );
@@ -465,7 +514,9 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => _content(context);
+
+  Widget _content(BuildContext context, {bool settingsOnly = false}) {
     final transcript = _transcript, model = _model;
     final progress = _progress;
     final settings = <Widget>[
@@ -488,7 +539,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
             ? null
             : (language) {
                 if (language == null) return;
-                setState(() {
+                _update(() {
                   _language = language;
                   _model = null;
                   _checking = true;
@@ -527,7 +578,18 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
           const Text('One shared download for Hindi and Hindi–English.'),
       ],
       FilledButton.icon(
-        onPressed: _enabled && !_checking && model != null ? _generate : null,
+        onPressed: _enabled && !_checking && model != null
+            ? () async {
+                await _generate();
+                if (mounted &&
+                    _error == null &&
+                    _transcript != null &&
+                    settingsOnly &&
+                    context.mounted) {
+                  Navigator.of(context).pop();
+                }
+              }
+            : null,
         icon: const Icon(Icons.subtitles_outlined),
         label: Text(
           model == null || model.ready
@@ -550,42 +612,40 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (transcript == null) ...[
+        if (settingsOnly)
+          ...settings
+        else if (transcript == null) ...[
+          const SizedBox(height: 16),
           Text(
-            'Create your transcript',
+            'Start with your words',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 8),
-          ...settings,
-        ] else ...[
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Your transcript',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ),
-              Text(
-                _language.label,
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-            ],
+          const Text(
+            'Turn speech into a transcript. Tap words to censor them and pauses to shorten them.',
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: _enabled ? openSettings : null,
+            icon: const Icon(Icons.subtitles_outlined),
+            label: const Text('Create transcript'),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'On-device editing. Your video stays with you.',
+            textAlign: TextAlign.center,
+          ),
+        ] else ...[
           const Text('Tap a word to censor it. Tap a pause to shorten it.'),
-          if (_language != TranscriptLanguage.english)
-            const Text(
-              'Experimental recognition: check words against the original.',
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: _enabled ? openSettings : null,
+              child: const Text('Language & downloads'),
             ),
-          ExpansionTile(
-            key: const Key('transcript-settings'),
-            title: const Text('Language & downloads'),
-            childrenPadding: const EdgeInsets.only(bottom: 12),
-            children: settings,
           ),
         ],
-        if (_working) ...[
+        if (_working && (settingsOnly || !_settingsOpen)) ...[
           LinearProgressIndicator(value: progress?.fraction),
           Text(switch (progress?.phase) {
             'downloading' =>
@@ -601,13 +661,13 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
               onPressed: _cancelled
                   ? null
                   : () async {
-                      setState(() => _cancelled = true);
+                      _update(() => _cancelled = true);
                       try {
                         await widget.engine.cancel();
                         if (_findingPauses) await widget.media.cancelAnalysis();
                       } catch (e) {
                         if (mounted) {
-                          setState(() {
+                          _update(() {
                             _cancelled = false;
                             _error = (e is PlatformException
                                 ? e.message ?? 'Speech operation failed.'
@@ -620,7 +680,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
             ),
         ],
 
-        if (transcript != null) ...[
+        if (!settingsOnly && transcript != null) ...[
           if (transcript.words.isEmpty)
             const Padding(
               padding: EdgeInsets.all(12),
@@ -652,9 +712,11 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
             ),
           if (_pauseNotice != null) Text(_pauseNotice!),
         ],
-        if (widget.onSelectionChanged == null && actions != null)
+        if (!settingsOnly &&
+            widget.onSelectionChanged == null &&
+            actions != null)
           TranscriptActionBar(actions: actions, enabled: _enabled),
-        if (_error != null) ...[
+        if (_error != null && (settingsOnly || !_settingsOpen)) ...[
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: SelectableText(_error!),
@@ -663,7 +725,7 @@ class _TranscriptPanelState extends State<TranscriptPanel> {
             TextButton(
               onPressed: _enabled
                   ? () {
-                      setState(() => _checking = true);
+                      _update(() => _checking = true);
                       _refreshModel();
                     }
                   : null,

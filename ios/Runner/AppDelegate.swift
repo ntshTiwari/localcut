@@ -133,7 +133,7 @@ import UniformTypeIdentifiers
             throw self.error("Choose a playable video with a positive duration.")
           }
           let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-          reply(["path": destination.path, "durationMs": Int(duration.seconds * 1000), "hasAudio": !audioTracks.isEmpty])
+          reply(["path": destination.path, "durationMs": Int(duration.seconds * 1000), "hasAudio": !audioTracks.isEmpty, "name": url.lastPathComponent])
         } catch {
           try? FileManager.default.removeItem(at: destination)
           throw error

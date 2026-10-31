@@ -99,12 +99,17 @@ Future<void> mount(
     ),
   );
   await tester.pumpAndSettle();
+  await tester.tap(find.text('Create transcript'));
+  await tester.pumpAndSettle();
 }
 
 Future<void> language(WidgetTester tester, String label) async {
   if (find.byKey(const Key('transcript-language')).evaluate().isEmpty) {
-    await tester.ensureVisible(find.text('Language & downloads'));
-    await tester.tap(find.text('Language & downloads'));
+    final entry = find.text('Language & downloads').evaluate().isNotEmpty
+        ? find.text('Language & downloads')
+        : find.text('Create transcript');
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
     await tester.pumpAndSettle();
   }
   await tester.ensureVisible(find.byKey(const Key('transcript-language')));
@@ -233,8 +238,11 @@ void main() {
     await language(tester, 'Hindi');
     await tester.tap(find.text('Generate transcript'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Language & downloads'));
-    await tester.tap(find.text('Language & downloads'));
+    final entry = find.text('Language & downloads').evaluate().isNotEmpty
+        ? find.text('Language & downloads')
+        : find.text('Create transcript');
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Remove model download'));
     await tester.tap(find.text('Remove model download'));
