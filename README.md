@@ -50,6 +50,10 @@ section kept or removed. Video stays inside the editor/timing sheet/Review.
 See [step 7](docs/07-range-playback/README.md) for the implementation walkthrough.
 Rebuild the iOS app to register the embedded native preview view.
 
+For long recordings, pause suggestions open a compact overview and guided
+one-at-a-time reviewer with filters, longest-first sorting, progress, and Undo.
+See [step 9](docs/09-guided-pause-review/README.md) for the current pause workflow.
+
 ## Implemented
 
 - Import a local video using the iOS Files picker (copy into app storage).
@@ -223,3 +227,5 @@ lives on `milestone/creator-design`, based on accepted commit `3b270d6`.
 Timestamp playback lives on `milestone/range-preview`, based on `73f14bf`.
 
 The simplified navigation lives on `milestone/editor-navigation`, building on the range-preview work.
+
+Guided pause review lives on `milestone/guided-pause-review`, based on `b14888d`.

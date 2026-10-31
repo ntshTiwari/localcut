@@ -39,6 +39,10 @@ beside `lib/`; explanations are versioned with the code in Git.
    a dedicated selection screen with a stable player, and a full timing screen.
    Added on `milestone/editor-navigation`, building on step 7.
 
+9. [Guided pause review](09-guided-pause-review/README.md) — lazy compact overview,
+   filtered/sorted decisions, one-pause reviewer, compact preview modes, automatic
+   advance and Undo. Added on `milestone/guided-pause-review`, based on `b14888d`.
+
 The first two guides were added in a documentation follow-up after their
 implementation commits. Later guides are included with their implementations.
 Existing commits have not been rewritten. Later changes should update

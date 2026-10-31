@@ -68,20 +68,24 @@ void main() {
       await tester.pumpAndSettle();
       expect(engine.analyses, 1);
       expect(edits, isEmpty);
-      expect(find.text('0:01.150 – 0:02.850'), findsOneWidget);
-      await tester.ensureVisible(find.text('Select all'));
-      await tester.tap(find.text('Select all'));
+      await tester.ensureVisible(find.text('Review suggested pauses'));
+      await tester.tap(find.text('Review suggested pauses'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Preview selected silence cuts'));
-      await tester.tap(find.text('Preview selected silence cuts'));
+      await tester.tap(find.text('Review next pause'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('preview-mode-Trimmed')));
       await tester.pumpAndSettle();
       expect(engine.previewed!.map((s) => [s.startMs, s.endMs]).toList(), [
-        [0, 1150],
-        [2850, 5000],
+        [150, 1150],
+        [2850, 3850],
       ]);
       expect(edits, isEmpty);
-      await tester.ensureVisible(find.text('Add selected cuts to edits'));
-      await tester.tap(find.text('Add selected cuts to edits'));
+      await tester.tap(find.text('Trim pause'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Back to overview'));
+      await tester.pumpAndSettle();
+      expect(edits, isEmpty);
+      await tester.tap(find.text('Add 1 cut to edits'));
       await tester.pumpAndSettle();
       expect(edits.single.startMs, 1150);
       expect(find.textContaining('No new pauses found'), findsOneWidget);
@@ -115,7 +119,7 @@ void main() {
       find.textContaining('This video has no audio track'),
       findsOneWidget,
     );
-    expect(find.text('Add selected cuts to edits'), findsNothing);
+    expect(find.text('Review suggested pauses'), findsNothing);
   });
   testWidgets(
     'waveform reuses silence analysis and previews a mute with existing cuts',

@@ -1,5 +1,6 @@
 import '../core/context_preview.dart';
-import 'time_range_playback.dart';
+import '../core/pause_review.dart';
+import '../editor/pause_review_screen.dart';
 import 'package:flutter/material.dart';
 import '../core/edit_plan.dart';
 import '../core/silence_detection.dart';
@@ -18,7 +19,11 @@ class SilenceReview extends StatefulWidget {
     this.analysis,
     this.onAnalysis,
     this.collapseAdvanced = false,
+    this.pauseSession,
+    this.onOpenPauseReview,
   });
+  final PauseReviewSession? pauseSession;
+  final VoidCallback? onOpenPauseReview;
   final bool collapseAdvanced;
   final MediaEngine engine;
   final SourceVideo source;
@@ -34,10 +39,20 @@ class SilenceReview extends StatefulWidget {
 
 class _SilenceReviewState extends State<SilenceReview> {
   AudioAnalysis? _analysis;
+  late final _review = widget.pauseSession ?? PauseReviewSession();
+  @override
+  void dispose() {
+    if (widget.pauseSession == null) _review.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
     _analysis = widget.analysis;
+    _threshold = _review.settings.thresholdDb;
+    _minimumPause = _review.settings.minimumPauseMs / 1000;
+    _padding = _review.settings.paddingMs / 1000;
   }
 
   @override
@@ -52,13 +67,11 @@ class _SilenceReviewState extends State<SilenceReview> {
   double _threshold = -40;
   double _minimumPause = .8;
   double _padding = .15;
-  final Set<String> _selected = {};
   String? _message;
   bool _working = false;
   bool _analyzing = false;
   bool _cancelRequested = false;
 
-  String _id(EditRange e) => '${e.startMs}:${e.endMs}';
   List<EditRange> get _suggestions => _analysis == null
       ? []
       : detectSilence(
@@ -79,8 +92,6 @@ class _SilenceReviewState extends State<SilenceReview> {
               ),
             )
             .toList();
-  List<EditRange> get _chosen =>
-      _suggestions.where((e) => _selected.contains(_id(e))).toList();
   bool get _enabled => widget.enabled && !_working;
 
   Future<void> _perform(
@@ -120,7 +131,7 @@ class _SilenceReviewState extends State<SilenceReview> {
     if (mounted && !_cancelRequested) {
       setState(() {
         _analysis = result;
-        _selected.clear();
+        _review.reset();
       });
       widget.onAnalysis?.call(result);
     }
@@ -128,30 +139,33 @@ class _SilenceReviewState extends State<SilenceReview> {
 
   void _change(VoidCallback update) => setState(() {
     update();
-    _selected.clear();
+    _review.reset();
+    _review.settings = SilenceSettings(
+      thresholdDb: _threshold,
+      minimumPauseMs: (_minimumPause * 1000).round(),
+      paddingMs: (_padding * 1000).round(),
+    );
     _message = null;
   });
 
-  Future<void> _previewSelected() => _perform(() async {
-    final plan = compilePlan(widget.source.durationMs, [
-      ...widget.edits,
-      ..._chosen,
-    ]);
-    await widget.engine.preview(widget.source.path, plan);
-  });
-
-  Future<void> _hear(EditRange cut, {bool remove = false}) => _perform(
-    () => widget.engine.preview(
-      widget.source.path,
-      contextPreview(
-        widget.source.durationMs,
-        cut.startMs,
-        cut.endMs,
-        remove: remove,
+  Future<void> _openReview(List<EditRange> suggestions) async {
+    widget.onOpenPauseReview?.call();
+    _review.sync(suggestions);
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PauseOverviewScreen(
+          session: _review,
+          source: widget.source,
+          media: widget.engine,
+          onApply: (cuts) {
+            compilePlan(widget.source.durationMs, [...widget.edits, ...cuts]);
+            widget.onApply(cuts);
+          },
+        ),
       ),
-      label: contextLabel(remove: remove),
-    ),
-  );
+    );
+    if (mounted) setState(() {});
+  }
 
   Widget _advanced(String title, String detail, Widget child) =>
       widget.collapseAdvanced
@@ -166,8 +180,7 @@ class _SilenceReviewState extends State<SilenceReview> {
   @override
   Widget build(BuildContext context) {
     final suggestions = _suggestions;
-    final chosen = _chosen;
-    final selectedMs = chosen.fold<int>(
+    final removableMs = suggestions.fold<int>(
       0,
       (sum, e) => sum + e.endMs - e.startMs,
     );
@@ -308,7 +321,7 @@ class _SilenceReviewState extends State<SilenceReview> {
                       : null,
                 ),
                 const Text(
-                  'Settings reuse the analysis. Changing them clears your selection; edits already added stay in place.',
+                  'Settings reuse the analysis. Changing them clears pause-review decisions; edits already added stay in place.',
                 ),
               ],
             ),
@@ -328,117 +341,17 @@ class _SilenceReviewState extends State<SilenceReview> {
             )
           else ...[
             Text(
-              '${suggestions.length} suggested cuts · ${(selectedMs / 1000).toStringAsFixed(2)} s selected',
+              '${suggestions.length} suggested pauses · ${pauseDuration(removableMs)} removable',
             ),
+            const SizedBox(height: 8),
             const Text(
-              'Play a range to hear only that section. Compare the context with the section kept or cut.',
-              style: TextStyle(fontSize: 12),
+              'Review one pause at a time, or mark several in a compact overview.',
             ),
-            Wrap(
-              spacing: 8,
-              children: [
-                TextButton(
-                  onPressed: _enabled
-                      ? () => setState(
-                          () => _selected.addAll(suggestions.map(_id)),
-                        )
-                      : null,
-                  child: const Text('Select all'),
-                ),
-                TextButton(
-                  onPressed: _enabled && chosen.isNotEmpty
-                      ? () => setState(_selected.clear)
-                      : null,
-                  child: const Text('Clear selection'),
-                ),
-              ],
-            ),
-            ListView.builder(
-              shrinkWrap: true,
-              primary: false,
-              physics: const NeverScrollableScrollPhysics(),
-              key: const Key('silence-suggestions'),
-              itemCount: suggestions.length,
-              itemBuilder: (context, index) {
-                final cut = suggestions[index];
-                return CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  value: _selected.contains(_id(cut)),
-                  title: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Pause ${index + 1} of ${suggestions.length}',
-                        style: Theme.of(context).textTheme.labelMedium,
-                      ),
-                      TimeRangePlayback(
-                        startMs: cut.startMs,
-                        endMs: cut.endMs,
-                        onPlay: _enabled
-                            ? () => _perform(
-                                () =>
-                                    widget.engine.preview(widget.source.path, [
-                                      RenderSegment(
-                                        cut.startMs,
-                                        cut.endMs,
-                                        false,
-                                      ),
-                                    ]),
-                              )
-                            : null,
-                      ),
-                    ],
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Cut ${((cut.endMs - cut.startMs) / 1000).toStringAsFixed(2)} s',
-                      ),
-                      ContextPlaybackButtons(
-                        onKeep: _enabled ? () => _hear(cut) : null,
-                        onRemove: _enabled
-                            ? () => _hear(cut, remove: true)
-                            : null,
-                      ),
-                    ],
-                  ),
-                  onChanged: _enabled
-                      ? (value) => setState(() {
-                          value == true
-                              ? _selected.add(_id(cut))
-                              : _selected.remove(_id(cut));
-                        })
-                      : null,
-                );
-              },
-            ),
-            OutlinedButton(
-              onPressed: _enabled && chosen.isNotEmpty
-                  ? _previewSelected
-                  : null,
-              child: const Text('Preview selected silence cuts'),
-            ),
-            FilledButton(
-              onPressed: _enabled && chosen.isNotEmpty
-                  ? () {
-                      try {
-                        compilePlan(widget.source.durationMs, [
-                          ...widget.edits,
-                          ...chosen,
-                        ]);
-                        widget.onApply(chosen);
-                        setState(() {
-                          _selected.clear();
-                          _message = null;
-                        });
-                      } catch (error) {
-                        setState(() => _message = error.toString());
-                      }
-                    }
-                  : null,
-              child: const Text('Add selected cuts to edits'),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: _enabled ? () => _openReview(suggestions) : null,
+              icon: const Icon(Icons.playlist_play),
+              label: const Text('Review suggested pauses'),
             ),
           ],
         ],

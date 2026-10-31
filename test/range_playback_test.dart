@@ -44,7 +44,9 @@ void main() {
       ),
     );
     await tap(tester, find.text('Analyze audio'));
-    await tap(tester, find.byTooltip('Play original 0:01.150 – 0:02.850'));
+    await tap(tester, find.text('Review suggested pauses'));
+    await tap(tester, find.text('Review next pause'));
+    await tap(tester, find.byKey(const ValueKey('preview-mode-Section')));
     expect(
       media.previewed!.map((s) => [s.startMs, s.endMs, s.muted]).toList(),
       [
@@ -52,11 +54,7 @@ void main() {
       ],
     );
     expect(edits, isEmpty);
-    expect(
-      tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
-      isFalse,
-    );
-    await tap(tester, find.text('With section'));
+    await tap(tester, find.byKey(const ValueKey('preview-mode-Original')));
     expect(media.previewed!.single.startMs, 150);
     expect(media.previewed!.single.endMs, 3850);
   });
@@ -137,7 +135,9 @@ void main() {
         ),
       );
       await tester.scrollUntilVisible(
-        find.byType(TextField).first,
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'Start (seconds)',
+        ),
         200,
         scrollable: find.byType(Scrollable).first,
       );
@@ -149,7 +149,9 @@ void main() {
       expect(media.previewed!.single.endMs, 2345);
       expect(edits, isEmpty);
       await tester.scrollUntilVisible(
-        find.byType(TextField).last,
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'End (seconds)',
+        ),
         150,
         scrollable: find.byType(Scrollable).first,
       );

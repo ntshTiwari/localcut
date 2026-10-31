@@ -1,3 +1,4 @@
+import 'compact_preview_switch.dart';
 import 'package:flutter/material.dart';
 
 /// Source timestamps always describe the unedited recording.
@@ -19,12 +20,13 @@ class TimeRangePlayback extends StatelessWidget {
     this.onContext,
     this.onContextRemoved,
     this.mute = false,
+    this.showContext = false,
   });
   final int startMs, endMs;
   final VoidCallback? onPlay;
   final String? label;
   final VoidCallback? onContext, onContextRemoved;
-  final bool mute;
+  final bool mute, showContext;
   @override
   Widget build(BuildContext context) {
     final range = '${rangeTimestamp(startMs)} – ${rangeTimestamp(endMs)}';
@@ -47,7 +49,7 @@ class TimeRangePlayback extends StatelessWidget {
             ),
           ],
         ),
-        if (onContext != null || onContextRemoved != null)
+        if (showContext || onContext != null || onContextRemoved != null)
           ContextPlaybackButtons(
             onKeep: onContext,
             onRemove: onContextRemoved,
@@ -72,25 +74,7 @@ class ContextPlaybackButtons extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       const Text('Hear context', style: TextStyle(fontSize: 12)),
-      Wrap(
-        spacing: 8,
-        runSpacing: 4,
-        children: [
-          OutlinedButton.icon(
-            onPressed: onKeep,
-            icon: const Icon(Icons.play_arrow, size: 18),
-            label: const Text('With section'),
-          ),
-          OutlinedButton.icon(
-            onPressed: onRemove,
-            icon: Icon(
-              mute ? Icons.volume_off_outlined : Icons.content_cut,
-              size: 18,
-            ),
-            label: Text(mute ? 'Censored' : 'Without section'),
-          ),
-        ],
-      ),
+      CompactPreviewSwitch(onOriginal: onKeep, onEdited: onRemove, mute: mute),
     ],
   );
 }

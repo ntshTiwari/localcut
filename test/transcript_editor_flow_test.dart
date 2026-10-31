@@ -130,7 +130,7 @@ void main() {
       expect(find.text('Gap · 1.8s'), findsOneWidget);
       expect(find.text('Shorten pause'), findsNothing);
       expect(find.textContaining('Silence is not confirmed'), findsOneWidget);
-      await tap(tester, find.text('With section'));
+      await tap(tester, find.byKey(const ValueKey('preview-mode-Original')));
       expect(media.previewed, isNotNull);
       await tap(tester, find.byTooltip('Back to transcript'));
       expect(find.text('Review 0 changes'), findsOneWidget);

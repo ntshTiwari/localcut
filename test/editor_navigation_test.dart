@@ -149,11 +149,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expectOnePageScroll(tester);
-      expect(find.text('Pause 1 of 3'), findsOneWidget);
+      await tap(tester, find.text('Review suggested pauses'));
+      expect(find.textContaining('3 suggested pauses'), findsOneWidget);
+      await tap(tester, find.byTooltip('Review pause at 0:07.150'));
       expect(find.text('Pause 3 of 3'), findsOneWidget);
-      await tester.ensureVisible(find.text('Pause 3 of 3'));
-      await tester.pumpAndSettle();
-      expect(find.text('Pause 3 of 3').hitTestable(), findsOneWidget);
     },
   );
 }

@@ -1,3 +1,4 @@
+import '../core/pause_review.dart';
 import 'selection_screen.dart';
 import 'inline_preview.dart';
 import 'dart:async';
@@ -37,9 +38,11 @@ class _EditorScreenState extends State<EditorScreen> {
     onPreview: _preview.show,
   );
   final _preview = InlinePreviewController();
+  var _pauseReview = PauseReviewSession();
   final _pageScroll = ScrollController();
   @override
   void dispose() {
+    _pauseReview.dispose();
     _pageScroll.dispose();
     _selection.dispose();
     _selectionBusy.dispose();
@@ -158,6 +161,8 @@ class _EditorScreenState extends State<EditorScreen> {
       if (source != null && mounted) {
         setState(() {
           _preview.close();
+          _pauseReview.dispose();
+          _pauseReview = PauseReviewSession();
           _source = source;
           _transcript = GlobalKey<TranscriptPanelState>();
           _edits.clear();
@@ -211,20 +216,23 @@ class _EditorScreenState extends State<EditorScreen> {
     await _pause();
     _preview.close();
     if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final proceed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
         builder: (_) => TimingScreen(
           source: _source,
           media: widget.engine,
           edits: _edits,
           analysis: _analysis,
+          pauseSession: _pauseReview,
           onAnalysis: (analysis) => setState(() => _analysis = analysis),
           onActivity: _activity,
           onApply: _accept,
         ),
       ),
     );
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    if (proceed == true && _edits.isNotEmpty) await _review();
   }
 
   Future<void> _settings() async {

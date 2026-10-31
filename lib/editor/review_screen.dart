@@ -349,6 +349,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                                             startMs: edit.startMs,
                                             endMs: edit.endMs,
                                             mute: edit.kind == EditKind.mute,
+                                            showContext: true,
                                             onContext: _working
                                                 ? null
                                                 : () => _context(edit, false),

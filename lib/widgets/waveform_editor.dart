@@ -295,6 +295,7 @@ class _WaveformEditorState extends State<WaveformEditor> {
             startMs: selection.startMs,
             endMs: selection.endMs,
             mute: _kind == EditKind.mute,
+            showContext: widget.onContext != null,
             onContext: widget.enabled && widget.onContext != null
                 ? () => _safely(() => widget.onContext!(_edit, false))
                 : null,

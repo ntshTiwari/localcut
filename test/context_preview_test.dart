@@ -62,13 +62,13 @@ void main() {
     final media = EditorMedia();
     await editor(tester, media);
     await tap(tester, find.byKey(const ValueKey('transcript-gap-1')));
-    await tap(tester, find.text('With section'));
+    await tap(tester, find.byKey(const ValueKey('preview-mode-Original')));
     expect(media.previewed!.map((s) => [s.startMs, s.endMs]), [
       [0, 3800],
     ]);
     expect(find.byType(InlinePreviewPane), findsOneWidget);
     expect(find.text('Context · with section'), findsOneWidget);
-    await tap(tester, find.text('Without section'));
+    await tap(tester, find.byKey(const ValueKey('preview-mode-Trimmed')));
     expect(media.previewed!.map((s) => [s.startMs, s.endMs]), [
       [0, 1150],
       [2650, 3800],
@@ -91,7 +91,7 @@ void main() {
     final media = EditorMedia();
     await editor(tester, media);
     await tap(tester, find.byKey(const ValueKey('transcript-gap-1')));
-    await tap(tester, find.text('Without section'));
+    await tap(tester, find.byKey(const ValueKey('preview-mode-Trimmed')));
     expect(find.text('Context · without section'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

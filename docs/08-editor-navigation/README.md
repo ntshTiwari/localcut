@@ -110,3 +110,6 @@ out their paragraphs/rows to fit the parent page; very long transcripts need
 performance profiling, and a future sliver-based document can preserve this
 single-scroll interaction with more aggressive virtualization. This step does
 not add transcript search, project persistence, or retake detection.
+
+Later change: [step 9](../09-guided-pause-review/README.md) replaces the inline
+numbered suggestion rows with a compact lazy overview and guided reviewer.

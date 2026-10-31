@@ -1,3 +1,4 @@
+import '../core/pause_review.dart';
 import '../core/context_preview.dart';
 import 'inline_preview.dart';
 import 'playback_media_engine.dart';
@@ -17,8 +18,10 @@ class TimingScreen extends StatefulWidget {
     required this.onApply,
     required this.onActivity,
     this.analysis,
+    this.pauseSession,
     required this.onAnalysis,
   });
+  final PauseReviewSession? pauseSession;
   final SourceVideo source;
   final MediaEngine media;
   final List<EditRange> edits;
@@ -138,6 +141,28 @@ class _TimingScreenState extends State<TimingScreen> {
           icon: const Icon(Icons.arrow_back),
         ),
       ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: FilledButton.icon(
+            key: const Key('proceed-from-timing'),
+            onPressed: _busy || widget.edits.isEmpty
+                ? null
+                : () {
+                    FocusScope.of(context).unfocus();
+                    _preview.close();
+                    Navigator.pop(context, true);
+                  },
+            icon: const Icon(Icons.arrow_forward),
+            label: Text(
+              widget.edits.isEmpty
+                  ? 'Proceed to review'
+                  : 'Proceed to review · ${widget.edits.length}',
+            ),
+          ),
+        ),
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -167,6 +192,8 @@ class _TimingScreenState extends State<TimingScreen> {
                         key: ValueKey(widget.source.path),
                         engine: _media,
                         collapseAdvanced: true,
+                        pauseSession: widget.pauseSession,
+                        onOpenPauseReview: _preview.close,
                         source: widget.source,
                         edits: widget.edits,
                         enabled: !_busy,
@@ -243,6 +270,7 @@ class _TimingScreenState extends State<TimingScreen> {
                           startMs: range.startMs,
                           endMs: range.endMs,
                           mute: range.kind == EditKind.mute,
+                          showContext: true,
                           onContext: _busy
                               ? null
                               : () => _playManual(range, withContext: true),
