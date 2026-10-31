@@ -1,4 +1,5 @@
-import 'dart:math' as math;
+import '../core/context_preview.dart';
+import 'time_range_playback.dart';
 import 'package:flutter/material.dart';
 import '../core/edit_plan.dart';
 import '../core/silence_detection.dart';
@@ -16,7 +17,9 @@ class SilenceReview extends StatefulWidget {
     required this.onBusyChanged,
     this.analysis,
     this.onAnalysis,
+    this.collapseAdvanced = false,
   });
+  final bool collapseAdvanced;
   final MediaEngine engine;
   final SourceVideo source;
   final bool enabled;
@@ -137,15 +140,28 @@ class _SilenceReviewState extends State<SilenceReview> {
     await widget.engine.preview(widget.source.path, plan);
   });
 
-  Future<void> _hear(EditRange cut) => _perform(
-    () => widget.engine.preview(widget.source.path, [
-      RenderSegment(
-        math.max(0, cut.startMs - 700),
-        math.min(widget.source.durationMs, cut.endMs + 700),
-        false,
+  Future<void> _hear(EditRange cut, {bool remove = false}) => _perform(
+    () => widget.engine.preview(
+      widget.source.path,
+      contextPreview(
+        widget.source.durationMs,
+        cut.startMs,
+        cut.endMs,
+        remove: remove,
       ),
-    ]),
+      label: contextLabel(remove: remove),
+    ),
   );
+
+  Widget _advanced(String title, String detail, Widget child) =>
+      widget.collapseAdvanced
+      ? ExpansionTile(
+          title: Text(title),
+          subtitle: Text(detail),
+          childrenPadding: const EdgeInsets.symmetric(vertical: 12),
+          children: [child],
+        )
+      : child;
 
   @override
   Widget build(BuildContext context) {
@@ -194,77 +210,114 @@ class _SilenceReviewState extends State<SilenceReview> {
         if (_analysis != null) ...[
           const SizedBox(height: 12),
           if (_analysis!.hasAudio && _analysis!.windows.isNotEmpty)
-            WaveformEditor(
-              key: ValueKey('waveform-${widget.source.path}'),
-              analysis: _analysis!,
-              durationMs: widget.source.durationMs,
-              edits: widget.edits,
-              suggestions: suggestions,
-              enabled: _enabled,
-              onHear: (start, end) => _perform(
-                () => widget.engine.preview(widget.source.path, [
-                  RenderSegment(start, end, false),
-                ]),
-              ),
-              onPreview: (edit) => _perform(
-                () => widget.engine.preview(
-                  widget.source.path,
-                  compilePlan(widget.source.durationMs, [
-                    ...widget.edits,
-                    edit,
+            _advanced(
+              'Waveform editor',
+              'Open precise drag and edge controls',
+              WaveformEditor(
+                key: ValueKey('waveform-${widget.source.path}'),
+                analysis: _analysis!,
+                durationMs: widget.source.durationMs,
+                edits: widget.edits,
+                suggestions: suggestions,
+                enabled: _enabled,
+                onHear: (start, end) => _perform(
+                  () => widget.engine.preview(widget.source.path, [
+                    RenderSegment(start, end, false),
                   ]),
                 ),
+                onContext: (edit, edited) => _perform(
+                  () => widget.engine.preview(
+                    widget.source.path,
+                    contextPreview(
+                      widget.source.durationMs,
+                      edit.startMs,
+                      edit.endMs,
+                      remove: edited && edit.kind == EditKind.cut,
+                      mute: edited && edit.kind == EditKind.mute,
+                    ),
+                    label: contextLabel(
+                      remove: edited && edit.kind == EditKind.cut,
+                      mute: edited && edit.kind == EditKind.mute,
+                    ),
+                  ),
+                ),
+                onPreview: (edit) => _perform(
+                  () => widget.engine.preview(
+                    widget.source.path,
+                    compilePlan(widget.source.durationMs, [
+                      ...widget.edits,
+                      edit,
+                    ]),
+                  ),
+                ),
+                onAdd: (edit) {
+                  widget.onApply([edit]);
+                  setState(() => _message = null);
+                },
               ),
-              onAdd: (edit) {
-                widget.onApply([edit]);
-                setState(() => _message = null);
-              },
             ),
-          Text(
-            'Find long pauses',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-          Text('Quietness threshold: ${_threshold.round()} dBFS'),
-          Slider(
-            key: const Key('threshold'),
-            value: _threshold,
-            min: -60,
-            max: -20,
-            divisions: 40,
-            label: '${_threshold.round()} dBFS',
-            onChanged: _enabled ? (v) => _change(() => _threshold = v) : null,
-          ),
-          const Text(
-            'A higher threshold includes louder pauses. Quiet speech can also be selected.',
-          ),
-          const SizedBox(height: 8),
-          Text('Minimum pause: ${_minimumPause.toStringAsFixed(1)} s'),
-          Slider(
-            key: const Key('minimum-pause'),
-            value: _minimumPause,
-            min: .4,
-            max: 2,
-            divisions: 16,
-            label: '${_minimumPause.toStringAsFixed(1)} s',
-            onChanged: _enabled
-                ? (v) => _change(() => _minimumPause = v)
-                : null,
-          ),
-          Text('Keep around each edge: ${(_padding * 1000).round()} ms'),
-          Slider(
-            key: const Key('pause-padding'),
-            value: _padding,
-            min: .05,
-            max: .3,
-            divisions: 5,
-            label: '${(_padding * 1000).round()} ms',
-            onChanged: _enabled ? (v) => _change(() => _padding = v) : null,
-          ),
-          const Text(
-            'Settings reuse the analysis. Changing them clears your selection; edits already added stay in place.',
+          _advanced(
+            'Detection settings',
+            'Adjust quietness and pause length',
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Find long pauses',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                Text('Quietness threshold: ${_threshold.round()} dBFS'),
+                Slider(
+                  key: const Key('threshold'),
+                  value: _threshold,
+                  min: -60,
+                  max: -20,
+                  divisions: 40,
+                  label: '${_threshold.round()} dBFS',
+                  onChanged: _enabled
+                      ? (v) => _change(() => _threshold = v)
+                      : null,
+                ),
+                const Text(
+                  'A higher threshold includes louder pauses. Quiet speech can also be selected.',
+                ),
+                const SizedBox(height: 8),
+                Text('Minimum pause: ${_minimumPause.toStringAsFixed(1)} s'),
+                Slider(
+                  key: const Key('minimum-pause'),
+                  value: _minimumPause,
+                  min: .4,
+                  max: 2,
+                  divisions: 16,
+                  label: '${_minimumPause.toStringAsFixed(1)} s',
+                  onChanged: _enabled
+                      ? (v) => _change(() => _minimumPause = v)
+                      : null,
+                ),
+                Text('Keep around each edge: ${(_padding * 1000).round()} ms'),
+                Slider(
+                  key: const Key('pause-padding'),
+                  value: _padding,
+                  min: .05,
+                  max: .3,
+                  divisions: 5,
+                  label: '${(_padding * 1000).round()} ms',
+                  onChanged: _enabled
+                      ? (v) => _change(() => _padding = v)
+                      : null,
+                ),
+                const Text(
+                  'Settings reuse the analysis. Changing them clears your selection; edits already added stay in place.',
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
+          Text(
+            'Suggested pauses',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           if (!_analysis!.hasAudio)
             const Text(
               'This video has no audio track. No silence cuts were suggested.',
@@ -276,6 +329,10 @@ class _SilenceReviewState extends State<SilenceReview> {
           else ...[
             Text(
               '${suggestions.length} suggested cuts · ${(selectedMs / 1000).toStringAsFixed(2)} s selected',
+            ),
+            const Text(
+              'Play a range to hear only that section. Compare the context with the section kept or cut.',
+              style: TextStyle(fontSize: 12),
             ),
             Wrap(
               spacing: 8,
@@ -296,45 +353,66 @@ class _SilenceReviewState extends State<SilenceReview> {
                 ),
               ],
             ),
-            // Bounded, lazy list keeps long recordings from building every row.
-            SizedBox(
-              height: math.min(280, suggestions.length * 80).toDouble(),
-              child: ListView.builder(
-                key: const Key('silence-suggestions'),
-                itemCount: suggestions.length,
-                itemBuilder: (context, index) {
-                  final cut = suggestions[index];
-                  return Row(
+            ListView.builder(
+              shrinkWrap: true,
+              primary: false,
+              physics: const NeverScrollableScrollPhysics(),
+              key: const Key('silence-suggestions'),
+              itemCount: suggestions.length,
+              itemBuilder: (context, index) {
+                final cut = suggestions[index];
+                return CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: _selected.contains(_id(cut)),
+                  title: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          controlAffinity: ListTileControlAffinity.leading,
-                          value: _selected.contains(_id(cut)),
-                          title: Text(
-                            '${(cut.startMs / 1000).toStringAsFixed(2)} – ${(cut.endMs / 1000).toStringAsFixed(2)} s',
-                          ),
-                          subtitle: Text(
-                            'Cut ${((cut.endMs - cut.startMs) / 1000).toStringAsFixed(2)} s',
-                          ),
-                          onChanged: _enabled
-                              ? (value) => setState(() {
-                                  value == true
-                                      ? _selected.add(_id(cut))
-                                      : _selected.remove(_id(cut));
-                                })
-                              : null,
-                        ),
+                      Text(
+                        'Pause ${index + 1} of ${suggestions.length}',
+                        style: Theme.of(context).textTheme.labelMedium,
                       ),
-                      IconButton(
-                        tooltip: 'Hear original context',
-                        onPressed: _enabled ? () => _hear(cut) : null,
-                        icon: const Icon(Icons.play_circle_outline),
+                      TimeRangePlayback(
+                        startMs: cut.startMs,
+                        endMs: cut.endMs,
+                        onPlay: _enabled
+                            ? () => _perform(
+                                () =>
+                                    widget.engine.preview(widget.source.path, [
+                                      RenderSegment(
+                                        cut.startMs,
+                                        cut.endMs,
+                                        false,
+                                      ),
+                                    ]),
+                              )
+                            : null,
                       ),
                     ],
-                  );
-                },
-              ),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Cut ${((cut.endMs - cut.startMs) / 1000).toStringAsFixed(2)} s',
+                      ),
+                      ContextPlaybackButtons(
+                        onKeep: _enabled ? () => _hear(cut) : null,
+                        onRemove: _enabled
+                            ? () => _hear(cut, remove: true)
+                            : null,
+                      ),
+                    ],
+                  ),
+                  onChanged: _enabled
+                      ? (value) => setState(() {
+                          value == true
+                              ? _selected.add(_id(cut))
+                              : _selected.remove(_id(cut));
+                        })
+                      : null,
+                );
+              },
             ),
             OutlinedButton(
               onPressed: _enabled && chosen.isNotEmpty

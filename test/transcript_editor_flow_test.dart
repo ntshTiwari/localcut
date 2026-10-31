@@ -33,17 +33,23 @@ Future<void> editor(WidgetTester tester, EditorMedia media) async {
   await tester.pumpWidget(
     LocalCutApp(engine: media, transcriptionEngine: speech),
   );
-  await tester.tap(find.text('Import video from Files'));
-  await tester.pumpAndSettle();
-  await tester.tap(find.text('Create transcript'));
-  await tester.pumpAndSettle();
-  await tester.ensureVisible(find.text('Generate transcript'));
-  await tester.tap(find.text('Generate transcript'));
-  await tester.pumpAndSettle();
+  await tap(tester, find.text('Import video from Files'));
+  await tap(tester, find.text('Create transcript'));
+  await tap(tester, find.text('Generate transcript'));
 }
 
 Future<void> tap(WidgetTester tester, Finder finder) async {
+  if (finder.evaluate().isEmpty) {
+    await tester.scrollUntilVisible(
+      finder,
+      150,
+      scrollable: find.byType(Scrollable).first,
+    );
+  }
   await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
   await tester.tap(finder);
   await tester.pumpAndSettle();
 }
@@ -56,10 +62,11 @@ void main() {
       await editor(tester, media);
       expect(media.analyses, 1);
       expect(media.previewed, isNull);
-      await tap(tester, find.text('Fine-tune timing'));
+      await tap(tester, find.text('Timing & pauses'));
+      await tap(tester, find.text('Waveform editor'));
       expect(find.byKey(const Key('waveform-surface')), findsOneWidget);
       expect(media.analyses, 1);
-      await tap(tester, find.byTooltip('Close timing tools'));
+      await tap(tester, find.byTooltip('Back to transcript'));
       await tap(tester, find.byKey(const ValueKey('transcript-gap-1')));
       expect(find.text('Shorten pause'), findsOneWidget);
       expect(find.textContaining('Remove 1.5s'), findsOneWidget);
@@ -120,11 +127,12 @@ void main() {
         ], hasAudio: true);
       await editor(tester, media);
       await tap(tester, find.byKey(const ValueKey('transcript-gap-1')));
-      expect(find.text('Gap 1.8s'), findsOneWidget);
+      expect(find.text('Gap · 1.8s'), findsOneWidget);
       expect(find.text('Shorten pause'), findsNothing);
       expect(find.textContaining('Silence is not confirmed'), findsOneWidget);
-      await tap(tester, find.text('Hear'));
+      await tap(tester, find.text('With section'));
       expect(media.previewed, isNotNull);
+      await tap(tester, find.byTooltip('Back to transcript'));
       expect(find.text('Review 0 changes'), findsOneWidget);
     },
   );
@@ -151,8 +159,9 @@ void main() {
     await editor(tester, EditorMedia());
     await tap(tester, find.byKey(const ValueKey('transcript-gap-1')));
     final action = tester.getRect(find.text('Shorten pause'));
-    final review = tester.getRect(find.byKey(const Key('review-changes')));
     expect(action.bottom, lessThan(812));
-    expect(review.bottom, lessThanOrEqualTo(812));
+    expect(find.text('Edit selection'), findsOneWidget);
+    await tap(tester, find.byTooltip('Back to transcript'));
+    expect(find.byKey(const Key('review-changes')), findsOneWidget);
   });
 }

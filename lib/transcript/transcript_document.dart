@@ -141,32 +141,29 @@ class TranscriptDocument extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final byWord = {for (final gap in gaps) gap.beforeWord: gap};
-    return SizedBox(
-      height: math.min(
-        380.0,
-        math.max(140.0, transcript.words.length * 8.0 + gaps.length * 15),
-      ),
-      child: ListView.builder(
-        key: const Key('transcript-text'),
-        itemCount: (transcript.words.length / 25).ceil(),
-        itemBuilder: (context, paragraph) {
-          final start = paragraph * 25,
-              end = math.min(start + 25, transcript.words.length);
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Wrap(
-              spacing: 1,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                for (var i = start; i < end; i++) ...[
-                  if (byWord[i] != null) _gap(context, byWord[i]!),
-                  _word(context, i),
-                ],
+    return ListView.builder(
+      shrinkWrap: true,
+      primary: false,
+      physics: const NeverScrollableScrollPhysics(),
+      key: const Key('transcript-text'),
+      itemCount: (transcript.words.length / 25).ceil(),
+      itemBuilder: (context, paragraph) {
+        final start = paragraph * 25,
+            end = math.min(start + 25, transcript.words.length);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Wrap(
+            spacing: 1,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (var i = start; i < end; i++) ...[
+                if (byWord[i] != null) _gap(context, byWord[i]!),
+                _word(context, i),
               ],
-            ),
-          );
-        },
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

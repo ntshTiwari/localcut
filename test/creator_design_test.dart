@@ -80,6 +80,8 @@ void main() {
         ),
       ),
     );
+    await tester.ensureVisible(find.text('Export video'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Export video'));
     await tester.pump();
     expect(find.text('Making the final cut.'), findsOneWidget);

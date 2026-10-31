@@ -1,3 +1,5 @@
+import 'selection_screen.dart';
+import 'inline_preview.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -8,7 +10,7 @@ import '../transcript/transcript_actions.dart';
 import '../transcript/transcript_gaps.dart';
 import '../transcript/transcript_panel.dart';
 import '../transcript/transcription_engine.dart';
-import 'fine_tune_sheet.dart';
+import 'timing_screen.dart';
 import 'playback_media_engine.dart';
 import 'review_screen.dart';
 import 'source_video_player.dart';
@@ -29,12 +31,58 @@ class EditorScreen extends StatefulWidget {
 
 class _EditorScreenState extends State<EditorScreen> {
   late SourceVideo _source = widget.initialSource;
-  late final MediaEngine _media = PlaybackMediaEngine(widget.engine, _pause);
+  late final MediaEngine _media = PlaybackMediaEngine(
+    widget.engine,
+    _pause,
+    onPreview: _preview.show,
+  );
+  final _preview = InlinePreviewController();
+  final _pageScroll = ScrollController();
+  @override
+  void dispose() {
+    _pageScroll.dispose();
+    _selection.dispose();
+    _selectionBusy.dispose();
+    _selectionError.dispose();
+    _preview.dispose();
+    super.dispose();
+  }
+
   final _player = GlobalKey<SourceVideoPlayerState>();
   var _transcript = GlobalKey<TranscriptPanelState>();
   final List<EditRange> _edits = [];
   AudioAnalysis? _analysis;
   TranscriptActions? _actions;
+  final _selection = ValueNotifier<TranscriptActions?>(null);
+  final _selectionBusy = ValueNotifier(false);
+  final _selectionError = ValueNotifier<String?>(null);
+  bool _selectionOpen = false;
+
+  void _selected(TranscriptActions? actions) {
+    setState(() => _actions = actions);
+    _selection.value = actions;
+  }
+
+  Future<void> _openSelection() async {
+    if (_selectionOpen || _actions == null || !mounted) return;
+    _selectionOpen = true;
+    _selectionError.value = null;
+    await _pause();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SelectionScreen(
+          actions: _selection,
+          busy: _selectionBusy,
+          error: _selectionError,
+          preview: _preview,
+        ),
+      ),
+    );
+    _preview.close();
+    _selectionOpen = false;
+  }
+
   bool _busy = false, _allowLeave = false;
   String? _exportPath, _error;
   Future<void> _pause() async {
@@ -42,8 +90,10 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _activity(bool busy) {
+    if (!mounted) return;
     if (busy) unawaited(_pause());
     setState(() => _busy = busy);
+    _selectionBusy.value = busy;
   }
 
   void _accept(List<EditRange> edits) {
@@ -107,11 +157,14 @@ class _EditorScreenState extends State<EditorScreen> {
       final source = await widget.engine.importVideo();
       if (source != null && mounted) {
         setState(() {
+          _preview.close();
           _source = source;
           _transcript = GlobalKey<TranscriptPanelState>();
           _edits.clear();
           _analysis = null;
           _actions = null;
+          _selection.value = null;
+          _selectionError.value = null;
           _exportPath = null;
         });
       }
@@ -123,47 +176,72 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Future<void> _watchOriginal() async {
+    if (_busy) return;
+    _activity(true);
     try {
-      await _media.preview(_source.path, compilePlan(_source.durationMs, []));
+      await _media.preview(
+        _source.path,
+        compilePlan(_source.durationMs, []),
+        label: 'Original video',
+      );
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: const Text('Original video')),
+            body: Padding(
+              padding: const EdgeInsets.all(20),
+              child: InlinePreviewPane(
+                controller: _preview,
+                showPlaceholder: true,
+              ),
+            ),
+          ),
+        ),
+      );
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
+    } finally {
+      _preview.close();
+      if (mounted) _activity(false);
     }
   }
 
   Future<void> _timing() async {
     await _pause();
+    _preview.close();
     if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: false,
-      enableDrag: false,
-      useSafeArea: true,
-      builder: (_) => FineTuneSheet(
-        source: _source,
-        media: _media,
-        edits: _edits,
-        analysis: _analysis,
-        onAnalysis: (analysis) => setState(() => _analysis = analysis),
-        onActivity: _activity,
-        onApply: _accept,
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TimingScreen(
+          source: _source,
+          media: widget.engine,
+          edits: _edits,
+          analysis: _analysis,
+          onAnalysis: (analysis) => setState(() => _analysis = analysis),
+          onActivity: _activity,
+          onApply: _accept,
+        ),
       ),
     );
+    if (mounted) setState(() {});
   }
 
   Future<void> _settings() async {
     await _pause();
+    _preview.close();
     await _transcript.currentState?.openSettings();
   }
 
   Future<void> _review() async {
     await _pause();
     if (!mounted) return;
+    _preview.close();
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ReviewScreen(
           source: _source,
-          media: _media,
+          media: widget.engine,
           edits: _edits,
           initialExportPath: _exportPath,
           onRemove: (index) => setState(() {
@@ -226,7 +304,7 @@ class _EditorScreenState extends State<EditorScreen> {
                   value: 'language',
                   child: Text('Language & downloads'),
                 ),
-                PopupMenuItem(value: 'timing', child: Text('Fine-tune timing')),
+                PopupMenuItem(value: 'timing', child: Text('Timing & pauses')),
               ],
             ),
           ],
@@ -243,17 +321,23 @@ class _EditorScreenState extends State<EditorScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (_actions != null) ...[
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: math.max(
-                        110,
-                        MediaQuery.sizeOf(context).height * .26,
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _busy
+                          ? null
+                          : _actions!.choosingPhrase
+                          ? _actions!.onPhrase
+                          : _openSelection,
+                      icon: Icon(
+                        _actions!.choosingPhrase
+                            ? Icons.close
+                            : Icons.edit_outlined,
                       ),
-                    ),
-                    child: SingleChildScrollView(
-                      child: TranscriptActionBar(
-                        actions: _actions!,
-                        enabled: !_busy,
+                      label: Text(
+                        _actions!.choosingPhrase
+                            ? 'Cancel phrase selection'
+                            : 'Edit selected section',
                       ),
                     ),
                   ),
@@ -276,80 +360,83 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
         body: SafeArea(
           bottom: false,
-          child: ListView(
-            children: [
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: math.min(
-                    270,
-                    MediaQuery.sizeOf(context).height * .29,
-                  ),
-                ),
-                child: SourceVideoPlayer(
-                  key: _player,
-                  source: _source,
-                  enabled: !_busy,
-                  onOpenOriginal: _watchOriginal,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
-                child: Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 8,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 13,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: colors.onSurface,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Transcript',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: colors.surface,
+          child: Scrollbar(
+            controller: _pageScroll,
+            thumbVisibility: true,
+            child: ListView(
+              controller: _pageScroll,
+              children: [
+                AnimatedBuilder(
+                  animation: _preview,
+                  builder: (_, _) => Visibility(
+                    visible: _preview.path == null,
+                    maintainState: true,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: math.min(
+                          270,
+                          MediaQuery.sizeOf(context).height * .29,
                         ),
                       ),
+                      child: SourceVideoPlayer(
+                        key: _player,
+                        source: _source,
+                        enabled: !_busy,
+                        onOpenOriginal: _watchOriginal,
+                      ),
                     ),
-                    TextButton.icon(
-                      onPressed: _busy ? null : _timing,
-                      icon: const Icon(Icons.tune, size: 17),
-                      label: const Text('Fine-tune timing'),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-                child: Column(
-                  children: [
-                    TranscriptPanel(
-                      key: _transcript,
-                      engine: widget.transcriptionEngine,
-                      media: _media,
-                      source: _source,
-                      edits: _edits,
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: ListTile(
                       enabled: !_busy,
-                      analysis: _analysis,
-                      onAnalysis: (a) => setState(() => _analysis = a),
-                      onBusyChanged: _activity,
-                      onAdd: (edit) => _accept([edit]),
-                      onSelectionChanged: (actions) =>
-                          setState(() => _actions = actions),
-                      onRestoreRange: _restore,
+                      onTap: _busy ? null : _timing,
+                      leading: const Icon(Icons.tune),
+                      trailing: const Icon(Icons.chevron_right),
+                      title: const Text('Timing & pauses'),
+                      subtitle: const Text(
+                        'Open waveform, silence suggestions and exact ranges',
+                      ),
                     ),
-                    if (_error != null)
-                      Text(_error!, style: TextStyle(color: colors.error)),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  child: Text(
+                    'Transcript',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                  child: Column(
+                    children: [
+                      TranscriptPanel(
+                        key: _transcript,
+                        engine: widget.transcriptionEngine,
+                        media: _media,
+                        source: _source,
+                        edits: _edits,
+                        enabled: !_busy,
+                        analysis: _analysis,
+                        onAnalysis: (a) => setState(() => _analysis = a),
+                        onBusyChanged: _activity,
+                        onAdd: (edit) => _accept([edit]),
+                        onSelectionChanged: _selected,
+                        onSelectionRequested: _openSelection,
+                        onError: (error) => _selectionError.value = error,
+                        onRestoreRange: _restore,
+                      ),
+                      if (_error != null)
+                        Text(_error!, style: TextStyle(color: colors.error)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

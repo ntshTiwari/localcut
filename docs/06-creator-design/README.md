@@ -47,7 +47,7 @@ LocalCut retains its own name and editing workflow.
   the model/transcript algorithms from step 5, moves setup into a modal sheet,
   and refreshes the separate modal route through a notifier. A busy sheet cannot
   close mid-operation; cancellation remains explicit.
-- [fine_tune_sheet.dart](../../lib/editor/fine_tune_sheet.dart): reuses
+- [timing_screen.dart](../../lib/editor/timing_screen.dart) (originally `fine_tune_sheet.dart`): reuses
   `SilenceReview` and the editor's audio cache; validates all manual changes
   through `compilePlan` before accepting them.
 - [review_screen.dart](../../lib/editor/review_screen.dart): source/edited
@@ -126,3 +126,6 @@ Manual acceptance:
 
 No project library, persistent drafts, thumbnails, numeric export percentage,
 Photos import, or retake detection is introduced by this milestone.
+
+Later UI changes: [step 8](../08-editor-navigation/README.md) replaces the timing sheet
+with a page and moves transcript decisions to a dedicated selection screen.

@@ -1,3 +1,4 @@
+import 'time_range_playback.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../core/edit_plan.dart';
@@ -14,6 +15,7 @@ class WaveformEditor extends StatefulWidget {
     required this.suggestions,
     required this.enabled,
     required this.onHear,
+    this.onContext,
     required this.onPreview,
     required this.onAdd,
   });
@@ -24,6 +26,7 @@ class WaveformEditor extends StatefulWidget {
   final bool enabled;
   final Future<void> Function(int startMs, int endMs) onHear;
   final Future<void> Function(EditRange edit) onPreview;
+  final Future<void> Function(EditRange edit, bool edited)? onContext;
   final ValueChanged<EditRange> onAdd;
   @override
   State<WaveformEditor> createState() => _WaveformEditorState();
@@ -288,8 +291,23 @@ class _WaveformEditorState extends State<WaveformEditor> {
             'No range selected. Drag across the waveform to choose audio.',
           )
         else ...[
-          Text(
-            'Selected ${(selection.startMs / 1000).toStringAsFixed(3)} – ${(selection.endMs / 1000).toStringAsFixed(3)} s (${((selection.endMs - selection.startMs) / 1000).toStringAsFixed(3)} s)',
+          TimeRangePlayback(
+            startMs: selection.startMs,
+            endMs: selection.endMs,
+            mute: _kind == EditKind.mute,
+            onContext: widget.enabled && widget.onContext != null
+                ? () => _safely(() => widget.onContext!(_edit, false))
+                : null,
+            onContextRemoved: widget.enabled && widget.onContext != null
+                ? () => _safely(() => widget.onContext!(_edit, true))
+                : null,
+            onPlay: widget.enabled
+                ? () => _safely(
+                    () => widget.onHear(selection.startMs, selection.endMs),
+                  )
+                : null,
+            label:
+                'Selected ${(selection.startMs / 1000).toStringAsFixed(3)} – ${(selection.endMs / 1000).toStringAsFixed(3)} s (${((selection.endMs - selection.startMs) / 1000).toStringAsFixed(3)} s)',
             key: const Key('waveform-selection-label'),
           ),
           Wrap(
@@ -317,14 +335,6 @@ class _WaveformEditorState extends State<WaveformEditor> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              OutlinedButton(
-                onPressed: widget.enabled
-                    ? () => _safely(
-                        () => widget.onHear(selection.startMs, selection.endMs),
-                      )
-                    : null,
-                child: const Text('Hear selection'),
-              ),
               OutlinedButton(
                 onPressed: widget.enabled
                     ? () => _safely(() async {

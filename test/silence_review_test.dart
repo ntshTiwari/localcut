@@ -20,7 +20,11 @@ class FakeEngine implements MediaEngine {
   }
 
   @override
-  Future<void> preview(String path, List<RenderSegment> segments) async {
+  Future<void> preview(
+    String path,
+    List<RenderSegment> segments, {
+    String? label,
+  }) async {
     previewed = segments;
   }
 
@@ -64,7 +68,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(engine.analyses, 1);
       expect(edits, isEmpty);
-      expect(find.text('1.15 – 2.85 s'), findsOneWidget);
+      expect(find.text('0:01.150 – 0:02.850'), findsOneWidget);
       await tester.ensureVisible(find.text('Select all'));
       await tester.tap(find.text('Select all'));
       await tester.pumpAndSettle();

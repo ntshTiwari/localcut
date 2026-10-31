@@ -137,10 +137,10 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('transcript-word-0')));
       await tester.pumpAndSettle();
       expect(media.previewed, isNull);
-      await tester.ensureVisible(find.text('Hear'));
-      await tester.tap(find.text('Hear'));
+      await tester.ensureVisible(find.text('With section'));
+      await tester.tap(find.text('With section'));
       await tester.pumpAndSettle();
-      expect(media.previewed!.single.startMs, 500);
+      expect(media.previewed!.single.startMs, 0);
       await tester.ensureVisible(find.text('Select phrase'));
       await tester.tap(find.text('Select phrase'));
       await tester.pumpAndSettle();

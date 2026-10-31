@@ -20,6 +20,11 @@ import UniformTypeIdentifiers
     guard let controller = window?.rootViewController as? FlutterViewController else {
       return super.application(application, didFinishLaunchingWithOptions: launchOptions)
     }
+    registrar(forPlugin: "LocalCutInlinePreview")?.register(
+      LocalCutPreviewFactory(messenger: controller.binaryMessenger, parent: controller) { [weak self] path, segments in
+        guard let self else { throw NSError(domain: "LocalCut", code: 1) }
+        return try await self.compose(path: path, segments: segments)
+      }, withId: "localcut/inline-preview")
     transcriptionService = LocalTranscriptionService(messenger: controller.binaryMessenger)
     mediaChannel = FlutterMethodChannel(name: "localcut/media", binaryMessenger: controller.binaryMessenger)
     mediaChannel?.setMethodCallHandler { [weak self] call, result in
@@ -93,15 +98,11 @@ import UniformTypeIdentifiers
     }
     Task { @MainActor in
       do {
+        if call.method == "preview" { LocalCutPreviewView.activePlayer?.pause() }
         let (composition, mix) = try await self.compose(path: path, segments: segments)
         if call.method == "preview" {
-          try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
-          try AVAudioSession.sharedInstance().setActive(true)
-          let item = AVPlayerItem(asset: composition)
-          item.audioMix = mix
-          let player = AVPlayerViewController()
-          player.player = AVPlayer(playerItem: item)
-          self.window?.rootViewController?.present(player, animated: true) { player.player?.play() }
+          // Validate before the Dart inline host creates its native composition view.
+          // No modal player is presented; the platform view owns playback.
           result(nil)
         } else {
           try await self.export(composition: composition, mix: mix, result: result)
@@ -365,5 +366,77 @@ struct AudioEnvelopeAccumulator {
     if endMs > startMs { windows.append([Double(startMs), Double(endMs), db]) }
     frameCount = 0
     energy = [Double](repeating: 0, count: energy.count)
+  }
+}
+
+
+/// Native composition playback embedded in the Flutter editing surface.
+private final class LocalCutPreviewFactory: NSObject, FlutterPlatformViewFactory {
+  typealias Builder = (String, [[String: Any]]) async throws -> (AVMutableComposition, AVMutableAudioMix?)
+  let messenger: FlutterBinaryMessenger
+  weak var parent: UIViewController?
+  let builder: Builder
+  init(messenger: FlutterBinaryMessenger, parent: UIViewController, builder: @escaping Builder) {
+    self.messenger = messenger; self.parent = parent; self.builder = builder
+  }
+  func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol { FlutterStandardMessageCodec.sharedInstance() }
+  func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
+    LocalCutPreviewView(frame: frame, id: viewId, args: args, messenger: messenger, parent: parent, builder: builder)
+  }
+}
+
+private final class LocalCutPreviewView: NSObject, FlutterPlatformView {
+  static weak var activePlayer: AVPlayer?
+  let container: UIView
+  let playerController = AVPlayerViewController()
+  let channel: FlutterMethodChannel
+  var task: Task<Void, Never>?
+  init(frame: CGRect, id: Int64, args: Any?, messenger: FlutterBinaryMessenger,
+       parent: UIViewController?, builder: @escaping LocalCutPreviewFactory.Builder) {
+    container = UIView(frame: frame)
+    channel = FlutterMethodChannel(name: "localcut/inline-preview/\(id)", binaryMessenger: messenger)
+    super.init()
+    container.backgroundColor = .black
+    playerController.allowsPictureInPicturePlayback = false
+    parent?.addChild(playerController)
+    playerController.view.frame = container.bounds
+    playerController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    container.addSubview(playerController.view)
+    playerController.didMove(toParent: parent)
+    channel.setMethodCallHandler { [weak self] call, result in
+      if call.method == "pause" { self?.playerController.player?.pause(); result(nil) }
+      else { result(FlutterMethodNotImplemented) }
+    }
+    task = Task { @MainActor [weak self] in
+      guard let values = args as? [String: Any], let path = values["path"] as? String,
+            let segments = values["segments"] as? [[String: Any]] else { return }
+      do {
+        let (composition, mix) = try await builder(path, segments)
+        guard !Task.isCancelled, let self else { return }
+        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try AVAudioSession.sharedInstance().setActive(true)
+        let item = AVPlayerItem(asset: composition); item.audioMix = mix
+        let player = AVPlayer(playerItem: item)
+        Self.activePlayer?.pause()
+        Self.activePlayer = player
+        self.playerController.player = player
+        if UIApplication.shared.applicationState == .active { player.play() }
+      } catch {
+        guard !Task.isCancelled, let self else { return }
+        let label = UILabel(frame: self.container.bounds)
+        label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        label.text = "Preview unavailable. Try playing this selection again."
+        label.numberOfLines = 0; label.textAlignment = .center; label.textColor = .white
+        self.container.addSubview(label)
+      }
+    }
+  }
+  func view() -> UIView { container }
+  deinit {
+    task?.cancel(); channel.setMethodCallHandler(nil)
+    playerController.player?.pause()
+    playerController.willMove(toParent: nil)
+    playerController.view.removeFromSuperview()
+    playerController.removeFromParent()
   }
 }

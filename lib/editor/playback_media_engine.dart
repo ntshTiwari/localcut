@@ -5,13 +5,24 @@ import '../core/silence_detection.dart';
 /// Pause the inline original before a native context/edited player or export
 /// uses the same audio session. Editing algorithms remain in the backend.
 class PlaybackMediaEngine implements MediaEngine {
-  PlaybackMediaEngine(this.backend, this.pauseSource);
+  PlaybackMediaEngine(this.backend, this.pauseSource, {this.onPreview});
+  final void Function(
+    String path,
+    List<RenderSegment> segments, {
+    String? label,
+  })?
+  onPreview;
   final MediaEngine backend;
   final Future<void> Function() pauseSource;
   @override
-  Future<void> preview(String path, List<RenderSegment> segments) async {
+  Future<void> preview(
+    String path,
+    List<RenderSegment> segments, {
+    String? label,
+  }) async {
     await pauseSource();
-    await backend.preview(path, segments);
+    await backend.preview(path, segments, label: label);
+    onPreview?.call(path, segments, label: label);
   }
 
   @override

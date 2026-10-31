@@ -1,3 +1,4 @@
+import '../core/context_preview.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -22,9 +23,11 @@ class TranscriptPanel extends StatefulWidget {
     required this.onBusyChanged,
     required this.onAdd,
     this.onSelectionChanged,
+    this.onSelectionRequested,
     this.onRestoreRange,
     this.analysis,
     this.onAnalysis,
+    this.onError,
   });
   final TranscriptionEngine engine;
   final MediaEngine media;
@@ -34,9 +37,11 @@ class TranscriptPanel extends StatefulWidget {
   final ValueChanged<bool> onBusyChanged;
   final ValueChanged<EditRange> onAdd;
   final ValueChanged<TranscriptActions?>? onSelectionChanged;
+  final VoidCallback? onSelectionRequested;
   final void Function(int startMs, int endMs, EditKind? kind)? onRestoreRange;
   final AudioAnalysis? analysis;
   final ValueChanged<AudioAnalysis>? onAnalysis;
+  final ValueChanged<String?>? onError;
   @override
   State<TranscriptPanel> createState() => TranscriptPanelState();
 }
@@ -195,13 +200,14 @@ class TranscriptPanelState extends State<TranscriptPanel> {
   Future<void> _perform(
     Future<void> Function() action, {
     bool cancellable = false,
+    bool preview = false,
   }) async {
     _update(() {
       _working = true;
       _canCancel = cancellable;
       _cancelled = false;
       _error = null;
-      _progress = null;
+      _progress = preview ? const SpeechProgress('previewing', null, 0) : null;
     });
     widget.onBusyChanged(true);
     if (cancellable) {
@@ -233,6 +239,7 @@ class TranscriptPanelState extends State<TranscriptPanel> {
           _progress = null;
         });
         widget.onBusyChanged(false);
+        widget.onError?.call(_error);
         await _refreshModel();
       }
     }
@@ -320,7 +327,8 @@ class TranscriptPanelState extends State<TranscriptPanel> {
         _end = index;
       }
     });
-    _publishSelection();
+    _publishSelection(force: true);
+    widget.onSelectionRequested?.call();
   }
 
   void _selectGap(TranscriptGap gap) {
@@ -331,17 +339,39 @@ class TranscriptPanelState extends State<TranscriptPanel> {
       _choosingPhrase = false;
       _error = null;
     });
-    _publishSelection();
+    _publishSelection(force: true);
+    widget.onSelectionRequested?.call();
   }
 
-  Future<void> _hearRange(int start, int end) => _perform(
+  Future<void> _playRange(int start, int end) => _perform(
     () => widget.media.preview(widget.source.path, [
-      RenderSegment(
-        math.max(0, start - 500),
-        math.min(widget.source.durationMs, end + 700),
-        false,
-      ),
+      RenderSegment(start, end, false),
     ]),
+    preview: true,
+  );
+
+  Future<void> _hearRange(
+    int start,
+    int end, {
+    bool remove = false,
+    bool mute = false,
+    int? effectStart,
+    int? effectEnd,
+  }) => _perform(
+    () => widget.media.preview(
+      widget.source.path,
+      contextPreview(
+        widget.source.durationMs,
+        start,
+        end,
+        remove: remove,
+        mute: mute,
+        effectStartMs: effectStart,
+        effectEndMs: effectEnd,
+      ),
+      label: contextLabel(remove: remove, mute: mute),
+    ),
+    preview: true,
   );
 
   void _apply(EditRange edit) {
@@ -351,6 +381,7 @@ class TranscriptPanelState extends State<TranscriptPanel> {
       _clearSelection();
     } catch (e) {
       _update(() => _error = e.toString());
+      widget.onError?.call(_error);
     }
   }
 
@@ -391,9 +422,19 @@ class TranscriptPanelState extends State<TranscriptPanel> {
             ? '${seconds(gap.durationMs - removed)} remains. Restore puts the trimmed time back.'
             : gap.confirmed
             ? 'Remove ${seconds(gap.durationMs - 300)} · keep 0.3s of breathing room.'
-            : 'Silence is not confirmed. Listen, or use Fine-tune timing.',
+            : 'Silence is not confirmed. Listen, or use Timing & pauses.',
         onClear: _clearSelection,
+        startMs: gap.startMs,
+        endMs: gap.endMs,
+        onPlayRange: () => _playRange(gap.startMs, gap.endMs),
         onHear: () => _hearRange(gap.startMs, gap.endMs),
+        onHearRemoved: () => _hearRange(
+          gap.startMs,
+          gap.endMs,
+          remove: true,
+          effectStart: gap.confirmed ? gap.shorten().startMs : null,
+          effectEnd: gap.confirmed ? gap.shorten().endMs : null,
+        ),
         onShorten: gap.confirmed && !shortened
             ? () => _apply(gap.shorten())
             : null,
@@ -448,7 +489,7 @@ class TranscriptPanelState extends State<TranscriptPanel> {
     return TranscriptActions(
       title: _choosingPhrase ? 'Now tap the last word' : text,
       detail: range == null
-          ? 'Timing unavailable. Use Fine-tune timing to locate this text.'
+          ? 'Timing unavailable. Use Timing & pauses to locate this text.'
           : _choosingPhrase
           ? 'Select the end of the phrase in the transcript.'
           : censored
@@ -457,6 +498,15 @@ class TranscriptPanelState extends State<TranscriptPanel> {
           ? 'This selection is trimmed. Restore puts it back.'
           : '${first == last ? 'Word' : 'Phrase'} · ${seconds(range.endMs - range.startMs)} · censoring keeps video length unchanged.',
       onClear: _clearSelection,
+      startMs: range?.startMs,
+      endMs: range?.endMs,
+      onPlayRange: range == null
+          ? null
+          : () => _playRange(range.startMs, range.endMs),
+      contextMute: true,
+      onHearRemoved: range == null
+          ? null
+          : () => _hearRange(range.startMs, range.endMs, mute: true),
       onHear: range == null
           ? null
           : () => _hearRange(range.startMs, range.endMs),
@@ -477,11 +527,11 @@ class TranscriptPanelState extends State<TranscriptPanel> {
     );
   }
 
-  void _publishSelection() {
+  void _publishSelection({bool force = false}) {
     final signature = _anchor == null && _selectedGap == null
         ? 'none'
         : '${_language.code}|$_anchor|$_end|$_selectedGap|$_choosingPhrase|${_gaps.where((g) => g.beforeWord == _selectedGap).map((g) => '${g.quietStartMs}:${g.quietEndMs}').join()}|${widget.edits.map((e) => '${e.kind}:${e.startMs}:${e.endMs}').join(',')}';
-    if (signature == _lastSelectionSignature) return;
+    if (!force && signature == _lastSelectionSignature) return;
     _lastSelectionSignature = signature;
     widget.onSelectionChanged?.call(_actions);
   }
@@ -653,6 +703,7 @@ class TranscriptPanelState extends State<TranscriptPanel> {
             'verifying' => 'Verifying model download…',
             'transcribing' => 'Transcribing on this device…',
             'loading' => 'Loading speech model…',
+            'previewing' => 'Opening original range…',
             'checkingPauses' => 'Checking pauses on this device…',
             _ => 'Preparing transcript…',
           }),

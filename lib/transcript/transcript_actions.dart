@@ -1,3 +1,4 @@
+import '../widgets/time_range_playback.dart';
 import 'package:flutter/material.dart';
 
 /// Actions describe a temporary selection. The main screen hosts this bar
@@ -8,16 +9,25 @@ class TranscriptActions {
     required this.detail,
     required this.onClear,
     this.onHear,
+    this.onHearRemoved,
+    this.contextMute = false,
+    this.startMs,
+    this.endMs,
+    this.onPlayRange,
     this.onCensor,
     this.onShorten,
     this.onRestore,
     this.onPhrase,
     this.choosingPhrase = false,
   });
+  final bool contextMute;
+  final int? startMs, endMs;
+  final VoidCallback? onPlayRange;
   final String title;
   final String detail;
   final VoidCallback onClear;
   final VoidCallback? onHear;
+  final VoidCallback? onHearRemoved;
   final VoidCallback? onCensor;
   final VoidCallback? onShorten;
   final VoidCallback? onRestore;
@@ -55,6 +65,12 @@ class TranscriptActionBar extends StatelessWidget {
           ),
         ],
       ),
+      if (actions.startMs != null && actions.endMs != null)
+        TimeRangePlayback(
+          startMs: actions.startMs!,
+          endMs: actions.endMs!,
+          onPlay: enabled ? actions.onPlayRange : null,
+        ),
       Text(
         actions.detail,
         style: Theme.of(context).textTheme.bodySmall,
@@ -67,10 +83,10 @@ class TranscriptActionBar extends StatelessWidget {
         runSpacing: 4,
         children: [
           if (actions.onHear != null)
-            OutlinedButton.icon(
-              onPressed: enabled ? actions.onHear : null,
-              icon: const Icon(Icons.play_arrow, size: 18),
-              label: const Text('Hear'),
+            ContextPlaybackButtons(
+              mute: actions.contextMute,
+              onKeep: enabled ? actions.onHear : null,
+              onRemove: enabled ? actions.onHearRemoved : null,
             ),
           if (actions.onCensor != null)
             FilledButton.icon(

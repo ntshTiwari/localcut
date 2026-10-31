@@ -30,6 +30,15 @@ beside `lib/`; explanations are versioned with the code in Git.
    playback, transcript/timing sheets, review/export screens, and system themes.
    Added on `milestone/creator-design`, based on `3b270d6`.
 
+7. [Play timestamp ranges](07-range-playback/README.md) — exact original playback
+   beside suggestions, selections, manual ranges, and review edits, plus embedded
+   video and kept/cut context comparisons. Added on
+   `milestone/range-preview`, based on `73f14bf`.
+
+8. [Clear editor navigation](08-editor-navigation/README.md) — one page scroll,
+   a dedicated selection screen with a stable player, and a full timing screen.
+   Added on `milestone/editor-navigation`, building on step 7.
+
 The first two guides were added in a documentation follow-up after their
 implementation commits. Later guides are included with their implementations.
 Existing commits have not been rewritten. Later changes should update

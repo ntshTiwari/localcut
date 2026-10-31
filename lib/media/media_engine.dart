@@ -12,7 +12,11 @@ class SourceVideo {
 
 abstract interface class MediaEngine {
   Future<SourceVideo?> importVideo();
-  Future<void> preview(String path, List<RenderSegment> segments);
+  Future<void> preview(
+    String path,
+    List<RenderSegment> segments, {
+    String? label,
+  });
   Future<String> export(String path, List<RenderSegment> segments);
   Future<void> share(String path);
   Future<void> cancelExport();
@@ -42,8 +46,11 @@ class PlatformMediaEngine implements MediaEngine {
     'segments': segments.map((e) => e.toMap()).toList(),
   };
   @override
-  Future<void> preview(String path, List<RenderSegment> segments) =>
-      _channel.invokeMethod('preview', _args(path, segments));
+  Future<void> preview(
+    String path,
+    List<RenderSegment> segments, {
+    String? label,
+  }) => _channel.invokeMethod('preview', _args(path, segments));
   @override
   Future<String> export(String path, List<RenderSegment> segments) async =>
       (await _channel.invokeMethod<String>('export', _args(path, segments)))!;

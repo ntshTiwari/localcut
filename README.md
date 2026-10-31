@@ -38,10 +38,17 @@ verification, the code walkthrough, tests, and limitations.
 ## Creator workspace
 
 The latest UI uses YouTube-inspired red actions and neutral light/dark surfaces.
-Home → Editor → Review/export keeps setup and advanced tools in bottom sheets.
+The Transcript editor opens focused Edit selection and Timing & pauses screens,
+then Review/export. Language/model setup remains in a bottom sheet.
+See [step 8](docs/08-editor-navigation/README.md) for the current navigation.
 See [step 6](docs/06-creator-design/README.md) for the code and logic.
 **Fully restart/rebuild the iOS app after pulling this milestone** to register
 its new `video_player` plugin; hot reload is insufficient.
+
+Timestamp ranges include exact playback and Hear context comparisons with the
+section kept or removed. Video stays inside the editor/timing sheet/Review.
+See [step 7](docs/07-range-playback/README.md) for the implementation walkthrough.
+Rebuild the iOS app to register the embedded native preview view.
 
 ## Implemented
 
@@ -212,3 +219,7 @@ waveform commit `b490f03`. The unified transcript/pause editor lives on
 `milestone/transcript-pause-editor`, based on `6c21745`. `main` retains the first
 working prototype until the user requests a merge. The creator UI milestone
 lives on `milestone/creator-design`, based on accepted commit `3b270d6`.
+
+Timestamp playback lives on `milestone/range-preview`, based on `73f14bf`.
+
+The simplified navigation lives on `milestone/editor-navigation`, building on the range-preview work.
